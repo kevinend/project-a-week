@@ -1,4 +1,4 @@
-Note, the projects in this repo are experiments with different data structures, algorithms and problems.
+The projects in this repo are experiments with different data structures, algorithms and problems.
 This code is most often nowhere near production quality. However, solving (or attempting to solve) problems is the best way to learn 
 and gain experience which is what I strive to do with this repository.
 
