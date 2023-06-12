@@ -1,0 +1,15 @@
+NOTES:
+--Parsing is about understanding the structure and precedence of operations.
+
+--One way to do that for arithmetic and programming language grammars is to use Backus-Naur Forms (BNF) to identify structure.
+
+--The recursive descent parser in the files can only work if you can 'peek' ahead at the next set of characters or symbols
+  and determine what type of thing you are looking at. Not all grammars or expressions can be parsed using this technique.
+
+--Look at recursive functions at different levels of granularity. For example if you specify a routine named 'parse' that handles expressions of the form
+  X + Y then make sure its implementation handles X followed by + followed by Y. If X and Y need resolved with another recursive function then inspect
+  X independently then Y. Don't try to keep all the details in your head, it is easier to think of the recursive decomposition in stages and not all the
+  state at once. This point is very well explained in the section 9.5.2 of the resource link below in the paragraph that begins with 'When expressionValue() is called to evaluate the expression'
+  
+RESOURCES:
+--BNF terminology and sample implementation: https://math.hws.edu/javanotes/c9/s5.html
