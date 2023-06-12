@@ -1,0 +1,5 @@
+There is a 'reflections' file per directory in this repo which contains a retrospective of sorts 
+for a particular project/problem. 
+
+I try to provide an overview of useful techniques, articles and ideas to think about that could be portable
+across problems.
