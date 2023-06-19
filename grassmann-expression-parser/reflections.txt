@@ -1,0 +1,17 @@
+Notes:
+--Reiterate the idea from last week that parsing is about understanding structure and precedence of operations.
+
+--Bit structs (regular ints in this language) can express information very compactly. For example, one possible implementation
+  to handle the basis one elements would have been to store the strings representing the basis elements on each node. So you have e1 ^ e2 which
+  generates an ast that stores e1 and e2 as the 'values' on the nodes then to do the exterior product you have to concatenate those strings or sort them
+  depending on the grade to determine if the product is zero. With a bit struct you set the basis one elements that are set do an AND and if that is greater than
+  zero then the product is zero, otherwise you OR to get the composite element. You can do complements and spans easily just using the bits set in the int.
+  It really is much more flexible than the string approach.
+
+--Recursion allows you to handle structured data that you don't know how much you will come across. Provided you don't blow up the call stack you can
+  continually call mutually recursive functions to handle expressions that will be arbitrary length or have some degree of precedence (this before that).
+
+--Using 'light inheritance' for the expression tree structure. All nodes in the expression tree use a 'base' type of an Expression_Node that allows us
+  to build up the tree in the recursive functions even though we technically generate nodes of different types. As long as they all have the Expression_Node
+  as a base we can cast back and forth across types. Overdoing this becomes confusing and you end up in OOP territory, but this seems like a good use case
+  for it.

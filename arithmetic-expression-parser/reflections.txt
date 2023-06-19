@@ -1,4 +1,4 @@
-NOTES:
+Notes:
 --Parsing is about understanding the structure and precedence of operations.
 
 --One way to do that for arithmetic and programming language grammars is to use Backus-Naur Forms (BNF) to identify structure.

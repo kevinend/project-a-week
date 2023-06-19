@@ -121,6 +121,7 @@ parse_expression :: ( expression: string ) -> ( node: *Expression_Node, cursor: 
 
 	term, cursor = parse_term( cursor );
 	if term_is_negative {
+		// Note: Working on grassmann parser, this might not work as written!!!
 		// term is a constant node, cast to it and set the 'is_negative' property
 		constant_node := cast(*Constant_Node)term;
 		constant_node.is_negative = true;
