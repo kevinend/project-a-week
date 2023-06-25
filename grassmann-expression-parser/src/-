@@ -1,7 +1,3 @@
-// so i think part of the problem is that it gets parsed as a single stringa
-// so you ahve 3e1 then parse that as a string, but if we parsed the reverse order, basis element, then number
-// we could remove that ambiguous case 
-
 /*
 	This file implements a simple parser of Grassmann (exterior) algebra expressions.
 	The structure of expressions handled by the parser are expressed as Backus-Naur Forms
@@ -16,7 +12,7 @@
 
 		expression 		::= <exterior-term>   [("+","-") <exterior-term]...
 		exterior-term   ::= <exterior-factor> [("^") <exterior-factor>]...
-		exterior-factor ::= <basis-one-element> | ["-"] <number> |  | "(" <expression> ")"
+		exterior-factor ::= ["-"] <number> | <basis-one-element> | "(" <expression> ")"
 
 	At the end of the week I did not make it as far as I hoped on this, the way she goes.
 	The code compiles and runs without errors for the examples in main but there is a lot more functionality
@@ -304,9 +300,7 @@ print_in_order_traversal :: ( node: *Expression_Node ) {
 		for i: 0..basis_one_elements.count-1 {
 			if k_vector.basis_components & (1 << i) {
 				append( *builder, basis_one_elements[i] );
-				if i < k_vector.grade-1 {
-					// in an expression like e1^e2 there is one operator less than the grade of the element
-					// this holds for longer expressions like e1^e2^e3^e4 which has three ^ and a grade of 4, etc.
+				if k_vector.grade > 1 {
 					append( *builder, "^" );
 				}
 			}
@@ -458,7 +452,7 @@ simplify :: ( node: *Expression_Node ) -> ( simplified_ast_nodes: *Expression_No
 			if binary_operator_node.operation == #char "^" {
 
 				k_vector := New(K_Vector_Node);
-				k_vector.kind = Node_Kind.K_Vector;
+				k_vector.kind = K_Vector_Node;
 
 				if (lvalue.grade + rvalue.grade) > dimension {
 					k_vector.grade = 0;
@@ -466,9 +460,8 @@ simplify :: ( node: *Expression_Node ) -> ( simplified_ast_nodes: *Expression_No
 				}
 				else
 				if lvalue.grade == 0 {
-					k_vector.grade       	  = rvalue.grade;
-					k_vector.basis_components = rvalue.basis_components;
-					k_vector.coefficient 	  = lvalue.coefficient * rvalue.coefficient;	
+					k_vector.grade       = rvalue.grade;
+					k_vector.coefficient = lvalue.coefficient * rvalue.coefficient;	
 				}
 				else
 				if rvalue.grade == 0 {
@@ -487,136 +480,21 @@ simplify :: ( node: *Expression_Node ) -> ( simplified_ast_nodes: *Expression_No
 					k_vector.basis_components = lvalue.basis_components | rvalue.basis_components; 
 				}
 
-				result = cast(*Expression_Node)k_vector;
-
 
 				// really going to have to stress test this, the simplify function is going to get massive with all the rules of the algebra
 				// then we can print-result (which runs expand, until fully expanded then simplifies everything)
 			}
+
+			result = cast(*Expression_Node)k_vector;
 		}
 
-		return result;
+
 	}
 }
 
-// annoying that i have to put 3^e1^e2 instead of 3e1^e2
 main :: () {
 
-{
-	set_dimension( N = 3 );
-	set_basis_one_elements( string.["e1","e2","e3"] );
 
-	expression: string = "3";
-	ast: *Expression_Node = parse_expression( expression );
-	print_in_order_traversal( ast );
-	print( "\n" );
-
-	expand( ast );
-	print_in_order_traversal( ast );
-	print( "\n" );
-
-	result := simplify( ast ); // should just return the node
-	print_in_order_traversal( result );
-	print( "\n" );
-};
-
-{
-	set_dimension( N = 3 );
-	set_basis_one_elements( string.["e1","e2","e3"] );
-
-	expression: string = "3^5";
-	ast: *Expression_Node = parse_expression( expression );
-	print_in_order_traversal( ast );
-	print( "\n" );
-
-	expand( ast );
-	print_in_order_traversal( ast );
-	print( "\n" );
-
-	result := simplify( ast ); // should multiply the two 0-vectors together, cool looks like it worked
-	print_in_order_traversal( result );
-	print( "\n" );
-};
-
-{
-	set_dimension( N = 3 );
-	set_basis_one_elements( string.["e1","e2","e3"] );
-
-	expression: string = "3^e1";
-	ast: *Expression_Node = parse_expression( expression );
-	print_in_order_traversal( ast );
-	print( "\n" );
-
-	expand( ast );
-	print_in_order_traversal( ast );
-	print( "\n" );
-
-	result := simplify( ast ); // should be a single node with coefficient 3 and basis component e1
-	print_in_order_traversal( result );
-	print( "\n" );
-};
-
-{
-	set_dimension( N = 3 );
-	set_basis_one_elements( string.["e1","e2","e3"] );
-
-	expression: string = "e1^e1";
-	ast: *Expression_Node = parse_expression( expression );
-	print_in_order_traversal( ast );
-	print( "\n" );
-
-	expand( ast );
-	print_in_order_traversal( ast );
-	print( "\n" );
-
-	result := simplify( ast );
-	print_in_order_traversal( result );
-	print( "\n" );
-};
-
-{
-	set_dimension( N = 3 );
-	set_basis_one_elements( string.["e1","e2","e3"] );
-
-	expression: string = "e1^e2";
-	ast: *Expression_Node = parse_expression( expression );
-	print_in_order_traversal( ast );
-	print( "\n" );
-
-	expand( ast );
-	print_in_order_traversal( ast );
-	print( "\n" );
-
-	result := simplify( ast );
-	print_in_order_traversal( result );
-	print( "\n" );
-};
-
-{
-	set_dimension( N = 3 );
-	set_basis_one_elements( string.["e1","e2","e3"] );
-
-	expression: string = "(3^e1)^(4^e2)"; 
-	ast: *Expression_Node = parse_expression( expression );
-	print_in_order_traversal( ast );
-	print( "\n" );
-
-	expand( ast );
-	print_in_order_traversal( ast );
-	print( "\n" );
-
-	result := simplify( ast );
-	print_in_order_traversal( result );
-	print( "\n" );
-};
-
-
-
-
-
-
-
-/*
 {
 	// distributive property single vector over sum
 	set_dimension( N = 3 );
@@ -666,7 +544,6 @@ main :: () {
 	print_in_order_traversal( ast );
 	print( "\n" );
 };
-*/
 
 /*
 {
