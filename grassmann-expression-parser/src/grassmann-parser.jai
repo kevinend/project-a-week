@@ -1,7 +1,3 @@
-// so i think part of the problem is that it gets parsed as a single stringa
-// so you ahve 3e1 then parse that as a string, but if we parsed the reverse order, basis element, then number
-// we could remove that ambiguous case 
-
 /*
 	This file implements a simple parser of Grassmann (exterior) algebra expressions.
 	The structure of expressions handled by the parser are expressed as Backus-Naur Forms
@@ -16,11 +12,21 @@
 
 		expression 		::= <exterior-term>   [("+","-") <exterior-term]...
 		exterior-term   ::= <exterior-factor> [("^") <exterior-factor>]...
-		exterior-factor ::= <basis-one-element> | ["-"] <number> |  | "(" <expression> ")"
+		exterior-factor ::= ["-"] ( <basis-one-element> | <number> |  | "(" <expression> ")" )
 
 	At the end of the week I did not make it as far as I hoped on this, the way she goes.
 	The code compiles and runs without errors for the examples in main but there is a lot more functionality
 	I intend to add to this one. Some of that functionality is listed below.
+
+	NOTE:
+	  Multiplication of basis elements by scalars is a tad clumsy.
+	  You must specify multiplication using the exterior product. 3^e1 and not 3e1.
+	  This isn't obvious until you try to parse the number 3 from 3e1 and use something like string-to-float
+	  which e represents the exponent so it doesn't get read as a number with the additional e1 after it. It
+	  gets read as 3e1 with the e interpreted as an exponent.
+
+	  If your basis is not e1,e2,e3..eN then you could handle this differently but I don't want to restrict that
+	  at this time so we are left with explicit exterior products.
 
 	TODO:
 	--Generate the span and cospans for elements (this would be super useful for expanding products)
@@ -341,37 +347,41 @@ print_in_order_traversal :: ( node: *Expression_Node ) {
 	return;
 }
 
-// need a demarcation between what is expand and what is simplify
-// so if you have e1 + e1 
-// SIMPLIFY:
-//  e1 + e1 == 2e1
-//  e1^(e1+e2) = e1^e1 + e1^e2  == 0 + 1^e1^e2 
-// EXPAND: right now is the distributive property
-// you take what is on the left and distribute over the right
-//  e1^(e1+e2) = e1^e1 + e1^e2
-//  (e1+e2)^(e1+e2) == 
-//
-// what if you have e1+e1^e2, that doesn't matter
-// we might need to do preorder-traversal of the tree to do the expansion
-// so we need to recurse to the bottom then work our way back up and checking 
-// while 
-//  
+expand_full :: ( node: *Expression_Node ) {
+	
+	// this is not the most performant approach but we can basically 'expand' one step at a time
+	// or use this procedure to fully expand the tree
+	// want this separate from simplify, so we can view the tree right before evaluation
 
-expand :: ( node: *Expression_Node ) {
+	expanded: bool = expand( node );
+	while expanded {
+		expanded = expand( node );
+	}
+
+	return;
+}
+
+// need to consider this full-expansion business
+expand :: ( node: *Expression_Node ) -> ( expanded: bool ) {
 
 	// NOTE: This case doesn't exist yet but make sure ~(e1^e2) ^ (e1+e2) is reordered correctly 
+
+	expanded_lvalue: bool = false;
+	expanded_rvalue: bool = false;
+
 
 	if node.kind == Node_Kind.Binary_Operator {
 		// recurse into the tree, need to expand leaf nodes first if they are themselves binary operators
 		binary_operator_node := cast(*Binary_Operator_Node)node;
-		expand( binary_operator_node.left_operand );
-		expand( binary_operator_node.right_operand );
+		expanded_lvalue = expand( binary_operator_node.left_operand );
+		expanded_rvalue = expand( binary_operator_node.right_operand );
 	}
 	else {
 		// don't expand K_Vector or Unary_Operator nodes
-		return;
+		return false;
 	}
 
+	// recursion terminates above on non-binary operator nodes, so this is definitely a binary operator
 	binary_operator_node := cast(*Binary_Operator_Node)node;
 	if binary_operator_node.operation == #char "^" {
 		if binary_operator_node.left_operand.kind == Node_Kind.Binary_Operator {
@@ -399,6 +409,8 @@ expand :: ( node: *Expression_Node ) {
 				binary_operator_node.operation     = distribute_over_operator; // + or -
 				binary_operator_node.left\_operand = cast(*Expression_Node)new_left_node;
 				binary_operator_node.right_operand = cast(*Expression_Node)new_right_node;	
+
+				expanded_rvalue = true;
 			}
 		}
 		else
@@ -427,18 +439,22 @@ expand :: ( node: *Expression_Node ) {
 				binary_operator_node.operation     = distribute_over_operator; // + or -
 				binary_operator_node.left\_operand = cast(*Expression_Node)new_left_node;
 				binary_operator_node.right_operand = cast(*Expression_Node)new_right_node;
+
+				expanded_lvalue = true;
 			}
 		}
 	}
 
-	return;
+	return expanded_lvalue || expanded_rvalue;
 }
 
-simplify :: ( node: *Expression_Node ) -> ( simplified_ast_nodes: *Expression_Node ) {
 
-	// we are going to modify the tree in-place i guess. Not sure how to go about this.
+
+simplify :: ( node: *Expression_Node ) -> ( result: *Expression_Node ) {
+
+	result: *Expression_Node;
 	if node.kind == Node_Kind.K_Vector {
-		return node;
+		result = node;
 	}
 	else
 	if node.kind == Node_Kind.Binary_Operator {
@@ -449,17 +465,15 @@ simplify :: ( node: *Expression_Node ) -> ( simplified_ast_nodes: *Expression_No
 		left\_node = simplify( binary_operator_node.left_operand );
 		right_node = simplify( binary_operator_node.right_operand );
 
-		result: *Expression_Node;
-
 		if left_node.kind == Node_Kind.K_Vector && right_node.kind == Node_Kind.K_Vector {
 			lvalue := cast(*K_Vector_Node)left\_node; 
 			rvalue := cast(*K_Vector_Node)right_node;
-			
+
+			k_vector := New(K_Vector_Node);
+			k_vector.kind = Node_Kind.K_Vector;
+	
 			if binary_operator_node.operation == #char "^" {
-
-				k_vector := New(K_Vector_Node);
-				k_vector.kind = Node_Kind.K_Vector;
-
+			
 				if (lvalue.grade + rvalue.grade) > dimension {
 					k_vector.grade = 0;
 					k_vector.coefficient = 0;
@@ -486,20 +500,66 @@ simplify :: ( node: *Expression_Node ) -> ( simplified_ast_nodes: *Expression_No
 					k_vector.coefficient 	  = lvalue.coefficient * rvalue.coefficient;
 					k_vector.basis_components = lvalue.basis_components | rvalue.basis_components; 
 				}
-
-				result = cast(*Expression_Node)k_vector;
-
-
-				// really going to have to stress test this, the simplify function is going to get massive with all the rules of the algebra
-				// then we can print-result (which runs expand, until fully expanded then simplifies everything)
 			}
-		}
+			else
+			if binary_operator_node.operation == #char "+" {
+				// becareful in here, you are comparing against zero using floats!
+				// will need to introduce an epsilon at some point
+				if lvalue.coefficient == 0 && rvalue.coefficient == 0 {
+					// result is zero
+					k_vector.grade = 0;
+					k_vector.basis_components = 0;
+					k_vector.coefficient      = 0;
+				}
+				else
+				if lvalue.coefficient == 0 && rvalue.coefficient != 0 {
+					k_vector.grade 			  = rvalue.grade;
+					k_vector.basis_components = rvalue.basis_components;
+					k_vector.coefficient      = rvalue.coefficient;
 
-		return result;
+				}
+				else
+				if lvalue.coefficient != 0 && rvalue.coefficient == 0 {
+					k_vector.grade 			  = lvalue.grade;
+					k_vector.basis_components = lvalue.basis_components;
+					k_vector.coefficient      = lvalue.coefficient;
+				}
+				else if lvalue.basis_components == rvalue.basis_components {
+					sum := lvalue.coefficient + rvalue.coefficient;
+					if sum == 0 { // this might be dangerous because of floating point rounding errors!
+						k_vector.grade 			  = 0;
+						k_vector.basis_components = 0;
+						k_vector.coefficient      = sum;
+					}
+					else {
+						k_vector.grade 			  = lvalue.grade;
+						k_vector.basis_components = lvalue.basis_components;
+						k_vector.coefficient      = sum;
+					}
+				}
+			}
+			else
+			if binary_operator_node.operation == #char "-" && lvalue.basis_components == rvalue.basis_components {
+				difference := lvalue.coefficient - rvalue.coefficient;
+				if difference == 0 { // this might be dangerous because of floating point rounding errors!
+					k_vector.grade 			  = 0;
+					k_vector.basis_components = 0;
+					k_vector.coefficient      = difference;
+				}
+				else {
+					k_vector.grade 			  = lvalue.grade;
+					k_vector.basis_components = lvalue.basis_components;
+					k_vector.coefficient      = difference;
+				}
+			}
+			
+			result = cast(*Expression_Node)k_vector;
+		}
 	}
+
+	return result;
 }
 
-// annoying that i have to put 3^e1^e2 instead of 3e1^e2
 main :: () {
 
 {
@@ -511,7 +571,8 @@ main :: () {
 	print_in_order_traversal( ast );
 	print( "\n" );
 
-	expand( ast );
+	expanded := expand( ast );
+	print( "Expanded == %\n", expanded );
 	print_in_order_traversal( ast );
 	print( "\n" );
 
@@ -529,7 +590,8 @@ main :: () {
 	print_in_order_traversal( ast );
 	print( "\n" );
 
-	expand( ast );
+	expanded := expand( ast );
+	print( "Expanded == %\n", expanded );
 	print_in_order_traversal( ast );
 	print( "\n" );
 
@@ -547,7 +609,9 @@ main :: () {
 	print_in_order_traversal( ast );
 	print( "\n" );
 
-	expand( ast );
+	expanded := expand( ast );
+	print( "Expanded == %\n", expanded );
+
 	print_in_order_traversal( ast );
 	print( "\n" );
 
@@ -610,7 +674,95 @@ main :: () {
 	print( "\n" );
 };
 
+{
+	set_dimension( N = 3 );
+	set_basis_one_elements( string.["e1","e2","e3"] );
 
+	expression: string = "e1-e1"; // if we sum or sub to zero it should just display zero
+	ast: *Expression_Node = parse_expression( expression );
+	print_in_order_traversal( ast );
+	print( "\n" );
+
+	expand( ast );
+	print_in_order_traversal( ast );
+	print( "\n" );
+
+	result := simplify( ast );
+	print_in_order_traversal( result );
+	print( "\n" );
+};
+
+{
+	set_dimension( N = 3 );
+	set_basis_one_elements( string.["e1","e2","e3"] );
+
+	expression: string = "e1-2^e1"; // if we sum or sub to zero it should just display zero
+	ast: *Expression_Node = parse_expression( expression );
+	print_in_order_traversal( ast );
+	print( "\n" );
+
+	expand( ast );
+	print_in_order_traversal( ast );
+	print( "\n" );
+
+	result := simplify( ast );
+	print_in_order_traversal( result );
+	print( "\n" );
+};
+
+{
+	set_dimension( N = 3 );
+	set_basis_one_elements( string.["e1","e2","e3"] );
+
+	expression: string = "e1^(e1+e2)"; 
+	ast: *Expression_Node = parse_expression( expression );
+	print_in_order_traversal( ast );
+	print( "\n" );
+
+	expanded := expand( ast );
+	print( "Expanded == %\n", expanded );
+	print_in_order_traversal( ast );
+	print( "\n" );
+
+	result := simplify( ast );
+	print_in_order_traversal( result ); // i don't think we handle the + operator in the expression
+	print( "\n" );
+};
+
+{
+	set_dimension( N = 3 );
+	set_basis_one_elements( string.["e1","e2","e3"] );
+
+	expression: string = "(e1+e3)^(e1+e2)"; 
+	ast: *Expression_Node = parse_expression( expression );
+	print_in_order_traversal( ast );
+	print( "\n" );
+
+	expanded := expand( ast );
+	print( "Expanded == %\n", expanded );
+	print_in_order_traversal( ast );
+	print( "\n" );
+
+	expanded = expand( ast );
+	print( "Expanded == %\n", expanded );
+	print_in_order_traversal( ast );
+	print( "\n" );
+
+	result := simplify( ast );
+	print_in_order_traversal( result ); // i don't think we handle the + operator in the expression
+	print( "\n" );
+};
+
+// so our simplify wants to return a single node but we may need to return a tree
+// like in this case we need the final tree to be something like 
+
+/*
+     +
+   ^   	+
+ e1 e2 ^   ^
+     e3 e1 e3 e2 and that is the simplified verison of the tree
+
+*/
 
 
 
