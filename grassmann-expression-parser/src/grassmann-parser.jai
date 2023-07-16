@@ -543,47 +543,14 @@ distribute_grassmann_products :: ( node: *Expression_Node ) -> ( tree: *Expressi
 	return subtree;
 }
 
-filter :: ( basis_elements: [..] K_Vector_Node ) -> ( k_vectors: [..] K_Vector_Node ) {
-	
-	k_vectors: [..] K_Vector_Node;
-	for element: basis_elements {
-		if element.coefficient != 0 {
-			array_add( *k_vectors, element );
-		}
-	}
-	return k_vectors;
-}
-
-sort :: ( k_vectors: *[..] K_Vector_Node ) {
-
-	// bubble-sort for k-vectors
-	swap: bool = false;
-	for _: 0..k_vectors.count-1 {
-		for i: 0..k_vectors.count-2 {
-			if (<<k_vectors)[i+1].basis_components < (<<k_vectors)[i].basis_components {
-				temp     	  	  := (<<k_vectors)[i];
-				(<<k_vectors)[i]   = (<<k_vectors)[i+1];
-				(<<k_vectors)[i+1] = temp;
-
-				swap = true;
-			}
-		}
-
-		if !swap { return; }
-		swap = false;
-	}
-	
-	return;
-}
-
-flatten :: ( subtree: *Expression_Node ) -> ( operators: Queue(u8), elements: Queue(K_Vector_Node) ) {
+flatten :: ( subtree: *Expression_Node ) -> ( operators: [..] u8, elements: [..] K_Vector_Node ) {
 	
 	// In-order traversal of the distributed expression tree.
 	// Once we have the flattened list of operators (sums/differences/grassmann products) and elements (1-vector/basis 1 elements)
 	// we need to evaluate the possible cases of our tree.
 	//
 	
-	flatten_helper :: ( node: *Expression_Node, operators: *Queue(u8), elements: *Queue(K_Vector_Node) ) {
+	flatten_helper :: ( node: *Expression_Node, operators: *[..] u8, elements: *[..] K_Vector_Node ) {
 
 		success: bool;
 		
@@ -596,41 +563,28 @@ flatten :: ( subtree: *Expression_Node ) -> ( operators: Queue(u8), elements: Qu
 			k_vector.grade       	  = k_vector_node.grade;
 			k_vector.basis_components = k_vector_node.basis_components;
 
-			success = enqueue( elements, k_vector );
+			array_add( elements, k_vector );
 		}
 		else
 		if node.kind == Node_Kind.Binary_Operator {
 			binary_operator_node := cast(*Binary_Operator_Node)node;
 			flatten_helper( binary_operator_node.left\_operand, operators, elements );
 
-			success = enqueue( operators, binary_operator_node.operation );
+			array_add( operators, binary_operator_node.operation );
 
 			flatten_helper( binary_operator_node.right_operand, operators, elements );
 		}
 	}
 
-	operators := queue_init( max_num_elements = 100, u8 );
-	elements  := queue_init( max_num_elements = 100, K_Vector_Node );
+	operators: [..] u8;
+	elements:  [..] K_Vector_Node;
 
 	flatten_helper( subtree, *operators, *elements );
 
 	return operators, elements;
 }
 
-eval :: ( operators: *Queue(u8), elements: *Queue(K_Vector_Node) ) -> ( k_vectors: [..] K_Vector_Node ) {
-
-	copy_elements :: ( k_vectors: *Queue(K_Vector_Node) ) -> ( copies: [..] K_Vector_Node ) {
-
-		// May be unnecessary. Seemed cleaner to return only the final results and not the queue from the eval proc.
-		copies: [..] K_Vector_Node;
-
-		while !is_empty( k_vectors ) {
-			k_vector, success := dequeue( k_vectors );
-			array_add( *copies, k_vector );
-		}
-
-		return copies;
-	}
+eval :: ( operators: [] u8, elements: [] K_Vector_Node ) -> ( k_vectors: [..] K_Vector_Node ) {
 
 	exterior_product :: ( lvalue: K_Vector_Node, rvalue: K_Vector_Node ) -> ( result: K_Vector_Node ) {
 
@@ -665,7 +619,7 @@ eval :: ( operators: *Queue(u8), elements: *Queue(K_Vector_Node) ) -> ( k_vector
 			//
 			// If after completing this process we have swapped an odd number of times then we negate the final product.
 
-			result.grade 		  = lvalue.grade + rvalue.grade;
+			result.grade 		= lvalue.grade + rvalue.grade;
 			result.coefficient  = lvalue.coefficient * rvalue.coefficient;
 
 			result.basis_components = rvalue.basis_components;
@@ -695,22 +649,17 @@ eval :: ( operators: *Queue(u8), elements: *Queue(K_Vector_Node) ) -> ( k_vector
 		return result;
 	}
 
-	sort_queue :: ( k_vectors: *Queue(K_Vector_Node) ) {
-
-		// People sort queues in weird ways like dequeing and enqueing repeatedly that is hard to to follow.
-		// Since head and tail are in the same location and the queue is effectively an array we will just bubble sort from
-		// the head index to the end (tail). Maybe this is stupid, sue me.
+	bubble_sort :: ( k_vectors: *[] K_Vector_Node ) {
 
 		swap: bool     = false;
-		num_k_vectors := k_vectors.tail - k_vectors.head;
-		for _: 0..num_k_vectors-1 {
-			for i: 0..num_k_vectors-2 {
-				if 	(<<k_vectors).entries[i+1].grade < (<<k_vectors).entries[i].grade && 
-			   		(<<k_vectors).entries[i+1].basis_components < (<<k_vectors).entries[i].basis_components {
+		for _: 0..k_vectors.count-1 {
+			for i: 0..k_vectors.count-2 {
+				if 	(<<k_vectors)[i+1].grade <= (<<k_vectors)[i].grade && 
+			   		(<<k_vectors)[i+1].basis_components < (<<k_vectors)[i].basis_components {
 
-					temp     	  	          := (<<k_vectors).entries[i];
-					(<<k_vectors).entries[i]   = (<<k_vectors).entries[i+1];
-					(<<k_vectors).entries[i+1] = temp;
+					temp     	  	          := (<<k_vectors)[i];
+					(<<k_vectors)[i]   = (<<k_vectors)[i+1];
+					(<<k_vectors)[i+1] = temp;
 
 					swap = true;
 				}
@@ -757,61 +706,52 @@ eval :: ( operators: *Queue(u8), elements: *Queue(K_Vector_Node) ) -> ( k_vector
 
   
   	// When this is a single element this process is wasteful.
-  	// We dequeue the element and enqueue it twice before returning it as the result.
+  	// We 'dequeue' the element and 'enqueue' it twice before returning it as the result.
   	// However, it does provide a nice flat structure to the code.
 
-  	results: [..] K_Vector_Node;
   	success: bool;
 
  	lvalue: K_Vector_Node;
  	rvalue: K_Vector_Node;
  	op: u8;
 
-	sum_ops := queue_init( max_num_elements = 50, u8 ); 
+ 	products: [..] K_Vector_Node; // if single element think 1^e1 == e1 or N \/ e1 = e1
 
-	// i'm not even sure we need to track the operators again? like if we have sums if we enqueue the elements then we just sum them together
-	// we don't need the minus sign anymore...hmm maybe
-
-	lvalue, success = dequeue( elements );
-	while !is_empty( operators ) {
-		op,     success = dequeue( operators );
-		rvalue, success = dequeue( elements );
+	lvalue = elements[0];
+	for i: 0..operators.count-1 {
+		op = operators[i];
+		rvalue = elements[i+1];
 		if op == #char "^" { 
 			lvalue = exterior_product( lvalue, rvalue ); 
 		}
 		else
 		if op == #char "+" || op == #char "-" {
 			if op == #char "-" { rvalue.coefficient *= -1; }
-			success = enqueue( *sum_ops, #char "+" );
-			success = enqueue( elements, lvalue );
+			array_add( *products, lvalue );
 			lvalue = rvalue;
 		}
 	}
-	success = enqueue( elements, lvalue );
+	array_add( *products, lvalue );
 
-	//sort_queue( elements ); // THIS IS BROKEN, not sorting correctly
+	bubble_sort( *products );
 
-	lvalue, success = dequeue( elements );
-	while !is_empty( sum_ops ) {
-		op,     success = dequeue( *sum_ops );
-		rvalue, success	= dequeue( elements );
+	results: [..] K_Vector_Node;
+
+	lvalue = products[0];
+	for i: 1..products.count-1 {
+		rvalue = products[i];
 		if lvalue.basis_components == rvalue.basis_components {
 			lvalue.coefficient += rvalue.coefficient;
 		}
 		else {
-			success = enqueue( elements, lvalue );
+			array_add( *results, lvalue );
 			lvalue = rvalue;
 		}
 	}
-	success = enqueue( elements, lvalue );
-			
-	results = copy_elements( elements );
-
-	print( "\n" );
+	array_add( *results, lvalue );
 
 	return results;
 }
-
 
 test :: ( 
 	 dimension: u8
@@ -845,7 +785,7 @@ test :: (
 
 	operators, elements := flatten( expression_tree_post_distribution );
 
-	results := eval( *operators, *elements );
+	results := eval( operators, elements );
 
 	// print_simplified_expression()
 	for result: results {
@@ -857,7 +797,178 @@ test :: (
 	return;
 }
 
+// This is technically the RIGHT complement
+// I built the complement buddy, now I want to work on spans/cospans because that is the 'expansion' part that is hard to see
+complement :: ( k_vector: K_Vector_Node ) -> ( n_k_vector: K_Vector_Node ) {
+
+	basis_n_element: K_Vector_Node;
+	basis_n_element.kind        =  Node_Kind.K_Vector;
+	basis_n_element.grade 		= dimension;
+	basis_n_element.coefficient = 1;
+	for i: 0..dimension-1 {
+		basis_n_element.basis_components |= (1 << i);
+	}
+
+	n_k_vector: K_Vector_Node;
+	n_k_vector.kind             =  Node_Kind.K_Vector;
+	n_k_vector.grade 	    	=  dimension - k_vector.grade;
+	n_k_vector.coefficient 	 	=  k_vector.coefficient;
+	n_k_vector.basis_components =  k_vector.basis_components ^ basis_n_element.basis_components; // XOR
+
+
+	// The exterior product of (k)-Vector and an (N-k)-Vector is a scalar multiple of the (N)-Vector.
+	// To determine the number of swaps and therefore the sign of the coefficient of the complement 
+	// we take the exterior product between the (k)-Vector and (N-K)-Vector and generate the N-vector.
+	// If the number of swaps is odd then we negate the coefficient on the complement (n-k)-Vector.
+
+	n_vector: K_Vector_Node = n_k_vector;
+	
+	num_swaps: int = 0;
+	for < i: dimension-1..0 {
+		// Start from the rightmost bit in the left argument and determine which bits are set
+		if k_vector.basis_components & (1 << i) {
+			// Bit in the left argument is set, iterate from the leftmost bit in the right argument
+			// and everytime the a bit is set increment the swap counter.
+			// When we get to the location of the bit from the left in the location on the right, set the bit in the result, stop the 'swap' loop and start over with any other bits from the left.
+			for j: 0..dimension-1 {
+				if j == i {
+					n_vector.basis_components |= (1 << j);
+					break;
+				}
+				else
+				if n_vector.basis_components & (1 << j) {
+					num_swaps += 1;	
+				}
+			}
+		}
+	}
+
+	if num_swaps % 2 != 0 { n_k_vector.coefficient *= -1; }	
+
+	return n_k_vector;
+}
+
 main :: () {
+
+{
+	set_dimension( 3 );
+	set_basis_one_elements( string.["e1","e2","e3"] );
+
+	e1: K_Vector_Node;
+	e1.basis_components = 1;
+	e1.grade = 1;
+	e1.coefficient = 1;
+
+	e2e3 := complement( e1 );
+	print( "Debugger\n" );
+
+}
+
+{
+	set_dimension( 3 );
+	set_basis_one_elements( string.["e1","e2","e3"] );
+
+	e2: K_Vector_Node;
+	e2.basis_components = 2;
+	e2.grade = 1;
+	e2.coefficient = 1;
+
+	e1e3 := complement( e2 );
+	print( "Debugger\n" );
+}
+
+{
+
+	set_dimension( 3 );
+	set_basis_one_elements( string.["e1","e2","e3"] );
+
+	e1e3: K_Vector_Node;
+	e1e3.basis_components = 5;
+	e1e3.grade = 2;
+	e1e3.coefficient = 1;
+
+	e2 := complement( e1e3 );
+	print( "Debugger\n" );
+
+}
+
+{
+
+	set_dimension( 2 );
+	set_basis_one_elements( string.["e1","e2"] );
+
+	e2: K_Vector_Node;
+	e2.basis_components = 2;
+	e2.grade = 1;
+	e2.coefficient = 1;
+
+	e1 := complement( e2 );
+	print( "Debugger\n" );
+
+}
+
+{
+
+	set_dimension( 2 );
+	set_basis_one_elements( string.["e1","e2"] );
+
+	_e1: K_Vector_Node;
+	_e1.basis_components = 1;
+	_e1.grade = 1;
+	_e1.coefficient = 1;
+
+	_e2 := complement( _e1 );
+	print( "Debugger\n" );
+
+}
+
+{
+
+	set_dimension( 4 );
+	set_basis_one_elements( string.["e1","e2","e3","e4"] );
+
+	e12: K_Vector_Node;
+	e12.basis_components = 3;
+	e12.grade = 2;
+	e12.coefficient = 1;
+
+	e34 := complement( e12 );
+	print( "Debugger\n" );
+}
+
+{
+
+	set_dimension( 4 );
+	set_basis_one_elements( string.["e1","e2","e3","e4"] );
+
+	e1: K_Vector_Node;
+	e1.basis_components = 1;
+	e1.grade = 1;
+	e1.coefficient = 1;
+
+	e234 := complement( e1 );
+	print( "Debugger\n" );
+}
+
+{
+
+	set_dimension( 4 );
+	set_basis_one_elements( string.["e1","e2","e3","e4"] );
+
+	e2: K_Vector_Node;
+	e2.basis_components = 2;
+	e2.grade = 1;
+	e2.coefficient = 1;
+
+	e134 := complement( e2 );
+	print( "Debugger\n" );
+}
+
+
+
+
+
+/*
 
 	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "e1-e3+e2" );
 
@@ -867,8 +978,6 @@ main :: () {
 	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "3+3" );
 	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "3+3+3" );
 	
-
-
 	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "e2^e1" );
 	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "e1^(e1+e2)" );
 	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "(e1+e2)^(e1+e2)" );
@@ -894,15 +1003,15 @@ main :: () {
 	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "e1+e1" );
 	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "e1-e1" );
 	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "e1+e2+e1" ); 
+
 	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "e1-2^e1" );
 	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "e1^e2+e1" );
 	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "e1^(e1+e2)" ); 
-
 	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "(e1+e3)^(e1+e2)" ); 
+*/
 
 	return;
 }
 
 #scope_file
 #import "Basic";
-#import, file "./queue.jai";
