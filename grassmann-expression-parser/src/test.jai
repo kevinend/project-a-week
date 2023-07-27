@@ -1,9 +1,6 @@
 #scope_export
 
 
-/* What is the play here kev?
-  --We want to recursively descend and generate the initial expression tree
-
 // Powers of 2
 // 2^1 = 2 
 // 2^2 = 4
@@ -36,19 +33,112 @@
 //  (7) e2e3   = 6
 //  (8) e1e2e3 = 7
 
+// what i set up is cute but it isn't exaclty what you would want to do
+// well i'm honestly not sure,
+// could you have a k-vector and just that?
+// or should we have different types, in reality it is a single integer value
+// in either case, so maybe it isn't terrible
 
-// e1 ^ e2e3
-// e2e3 ^ e1 // this should be positive right?
-// e3 ^ e1^e2 // see you have to hop over yourself first
+// if we break it off into several different'types then the mapping is into a new type
+// you would have the 1-vector
+// 2-vector
+// 3-vector
+// etc...
+// which you may or may not want for a representation
+// really a k-vector can be distinguished from it's grade
+// if we split them up then we don't need to create a new object
+// well you would because you would be combining two of them
 
-// e2e3 ^ e1
-// e3e2
-// e2 ^ e1e3 (2 ^ 5)
+// Regressive Product -- Intersection/Factorization
+// so in the book he says a one element regressive N element gives you a factorization
+// of the one element in terms of the N element
+//
+// 
+/*
+	e1 regressive e1e2e3 by the common factor theorem
+	1 + N = (1+N)-N = 1-element in terms of the second factor
 
-// so you hop over yourself which 
-// so that is e2 over e3
-// or we do this but start at the reverse end
+		 e1      -e2       e3
+		not(e1) not(-e2) not(e3)
+	(e1 not(e1))e1 + (e1 not(-e2))e2 + (e1 not(e3))e3 // this comes out this way, shouldn't it come out this way in general???
 
+	in general a 1 element can be a sum of of other 1 elements so it might be
+	(e1+e2+e3) regressive N, which then decomposes into each part of the element, since some will be non-zero
+
+	when John says "one-element" think the most general one element, not a single vector, a sum of 1-vectors
+
+	regressive product is distributive over addition so this turns into something like
+	(e1 ^ not(e1))e1 + (e2 ^ not(e2))e2 + (e3 ^ not(e3))e3
+
+	there are a lot of terms in there that are zero, because you have to expand all of them but in the end this is what is returned
+	in general there would be 9 terms and 6 of them would be zero
+
+	########################################
+	so what if you had to 'factor' a 2-element in a 3-space into a product of 1-elements (this is always the goal)?
+	(e1e2 + e1e3 + e2e3) regressive (e1e2 + e1e3 + e2e3) == (2+2)-3 = (4)-3 = 1
+	   Grade-2                        Grade-2
+
+	   // like if you said to span this element, how would you do it?
+	   // you'd have to distribute over the general two-element and take the regressive product
+
+	   // say you have e1e2 and you say, give me the 1-span of it and the 1-cospan
+	   // i would literally take the product with the general two element
+
+	   e1e2 regressive (e1e2 + e1e3 + e2e3)
+	   (e1e2 regressive e1e2)  + (e1e2 regressive e1e3) + (e1e2 regressive e2e3)
+	    
+	    e1e3:
+	    1-span:   {e1,e3}
+	    1-cospan: {e3,-e1}
+
+		(e1e2 ^e1)e3 + (e1e2^e3)-e1 + (e1e2^e2)e3 + (e1e2^e3)e2
+		// it has the terms you are looking for but it doesn't say these are the factors..
+		// s1e1 + s2e2
+
+		// we might just need to distribute and do the regressive product with the general element that gives us an
+		// N+1 element and express it over that
+
+		// i think it would go to zero if you tried to factor the same thing the same way
+
+
+
+	   Grade of M = 2
+	   1-span: Grade=1
+	   1-copsan: (2-1) = 1
+
+		// i'm thinking about the cospan wrong it is about the M-element, not the N-element
+		// so how do you span this element?
+		1-span:   {e1
+	   	1-cospan: {
+
+	what exactly would this look like?
+	(e1e2 ^ not(e1e2))e1e2, this isn't a one element, so i got some of my facts mixed up here...
+
+	// i think you have to distribute and then roll with the punches, i don't know another way to do it
+
+*/
+
+// here are the two options
+
+K_Vector :: struct {
+	grade: 			int;
+	basis_elements: int; 	// this is a bit-vector (e1,e2,e3, e1
+	coefficient:    float;  // some scalar multiple
+}
+// to get the basis_elements you need to look up the offset in the table and then can get the values
+// if they are all k-vectors you can just put them in a list
+// if they are separate you can't necessarily do that...hmm
+// you don't need the offset lookups either
+
+// so you have the mapping but how do you do things like complements?
+
+/*
+	e1	  e2   e3
+    e1e2 e1e3 e1e2 (maybe it is easier because you just move both at the same time), how many bits are set in this one, move both and call it a day
+    also you don't know exactly how many N-vectors you will have generically speaking
+
+    you know you have some k-vectors, some of those might be vectors, some might be bivectors, you might not have trivectors
+    then you need to account for them, it honestly is probably easier to go generic K_Vector route
 */
 
 power :: ( a: int, b: int ) -> (c: int) {
@@ -61,128 +151,110 @@ power :: ( a: int, b: int ) -> (c: int) {
 	return c;
 }
 
-main :: () {
+// n-choose-k
+// build the list of offsets
 
-{
-	values: [..] int;
-	array_add( *values, 1 );
-	array_add( *values, 2 );
-	array_add( *values, 3 );
+choose :: (n: int, k: int) -> (value: int) {
+	// example: choose(4,2) == (4*3)/(2*1) == 6
+    if k == 0 return 1;
+    return (n * choose(n-1, k-1)) / k;
+}
 
-	// could do something like this
-	// could do i: queue.head..queue.num_entries
-	// the operators is a separate index though that is 
-	// it would be i and i+1 for the rvalue
+// so the first step is to generate a list of the 1 elements then smash them
+// together, if we end up representing bivectors and stuff differently this may all work out with using the span...
+//
 
-	i := 0;
-	count := values.count;
-	while i < count { // this gets evaluated each time
-		defer i += 1;
-		print( "values[%] == %\n", i ,values[i] );
-		array_add( *values, i + 10 );
-	}
-	print( "Value of i is %\n", i );
+span :: ( values: [] int, span: int ) -> ( k_span: [..] int ) {
 
-	count = values.count;
-	while i < count {
-		defer i += 1;
-		print( "values[%] == %\n", i ,values[i] );
-	}
-	print( "Value of i is %\n", i );
+	k_span: [..] int;
 
-	lvalue = elements[0];
-	i     := 0;
-	count := operators.num_entries;
-	while i < count {
-		op     = operators[i];
-		rvalue = elements[i+1];
-		if op == #char "^" {
-			lvalue = exterior_product( lvalue, rvalue );
-		}
-		else
-		if op == #char "+" || op == #char "-" {
-			array_add( *operators, op );
-			array_add( *elements, lvalue );
-			lvalue = rvalue;
-		}
-	}
+	span_element: int;
+	slice: [] int;
+	for i: 0..values.count-1 {
+		base: int = values[i];
+		span_element = base;
+		for j: i+1..values.count-1 {
+			slice.data  = *values[j];
+			slice.count =  values.count-1;
 
-	count = operators.num_entries;
-	while i < count {
-		op, _ = dequeue( operators );
-	}
+			k: int = 0;
+			while k < (span-1) && slice.count >= (span-1) {
+				span_element += slice[k];
+				k +=1;
+			}
 
-	op_count := operators.num_entries;
-	for i: 0..op_count {
-	}
-
-};
-
-	x := power( 2, 4 );
-	print( "%\n", x );
-
-	for i: 0..3 {
-		for j: i..3 {
-			print( "i=%,j=% product = %\n", i, j, i*j );
-		}
-	}
-
-	// e1 e2 e3 e4
-	// 0  1  2  4
-	// 
-	// Index: 0  1  2  3
-	// Basis e1 e2 e3 e4
-	// Value: 1  2  4  8
-	// 0-15, you have 16 different combos
-
-	// dimension = 3 
-	//  1 // grade 0
-	//  3
-	//  3
-	//  1 = 7
-  
-	/*
-		e1,e2,e3,e4
-	*/
-
-	// start from the right of the left argument and the left of the right argument
-	// that way you have the correct number of swaps
-
-	dimension: int = 4;
-	left: int  = 6; // e1
-	right: int = 1; // e2
-
-	result: int = right; // e2
-
-	// set the result = right
-	num_swaps: int = 0;
-	for < i: dimension-1..0 {
-		if left & (1 << i) {
-			print( "Left set == %\n", i );
-			for j: 0..dimension-1 {
-				if j == i {
-					result = result | (1 << j);
-					break;
-				}
-				else
-				if result & (1 << j) {
-					num_swaps += 1;
-				}
+			if k == span-1 {
+				array_add( *k_span, span_element );
+				span_element = base; // reset to the base 1-element
 			}
 		}
 	}
 
-	print( "Number of swaps == %\n", num_swaps );
-	print( "Result == %\n", result );
+	return k_span;
+}
 
-	if num_swaps % 2 != 0 {
-		// odd number of swaps, negate the number
-		print( "Should be negative\n" );
-	}
-	else {
-		print( "Should be positive, leave untouched\n" );
+// 1, 2, 4, 8
+
+
+
+main :: () {
+
+	one_span := New([5]int);
+	print( "%\n", type_of(one_span) );
+
+
+	values: [4] int;
+	for i: 0..values.count-1 {
+		values[i] = (1 << i);
 	}
 
+	print( "Values == %\n", values );
+
+	k_span := span( values, 2 );
+	print( "k_span == %\n", k_span );
+
+	// we want to say something like
+	// bit = offsets[grade]
+
+	// the offset for one should be 0, then 3, then 6
+
+	// this builds the list of offsets
+
+	dimension: int = 4;
+	num_basis_elements: [4] int; // these need to be dimension + 1
+	offsets: 	  		[4] int; // dimension + 1; cumulative offsets
+
+	for i: 0..dimension-1 {
+		num_basis_elements[i] = choose( n = dimension, k = i+1 );
+	}
+
+	offsets[0] = 0;
+	for i: 1..dimension-1 { // skip over grade zero and one
+		offsets[i] = offsets[i-1] + num_basis_elements[i-1];	
+	}
+
+	print( "%\n", num_basis_elements );
+	print( "%\n", offsets );
+
+	grade1: int = 1;
+	grade2: int = 2;
+	grade3: int = 3;
+	grade4: int = 4;
+
+	// can only work up to dimension 6 in this representational form
+
+	print( "%,%,%,%\n", offsets[grade1-1], offsets[grade2-1], offsets[grade3-1], offsets[grade4-1] );
+
+	// so when you have to get the grade, you have to use an offset
+	// when you get the basis_component
+	// get_basis_elements( vector.grade ) --> offsets
+	// or what you do is have separate elements 
+	//
+	// [One element] --> [Two element]
+	// then you just map directly into their bit vectors...
+
+	
+	
 	return;
 }
 

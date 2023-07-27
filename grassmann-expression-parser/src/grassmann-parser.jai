@@ -9,9 +9,11 @@
 	from an expression tree and then evaluated to return the final result.
 
 	BNF for Grassmann expressions:
+	 *The character R represents the 'Regressive' product. Don't want to get into unicode characters quite yet.
+	  Eventually we will render those as logical and (U+2227) and or (U+2228) in unicode.
 
 		expression 		::= <exterior-term>   [("+","-") <exterior-term]...
-		exterior-term   ::= <exterior-factor> [("^") <exterior-factor>]...
+		exterior-term   ::= <exterior-factor> [("^","R") <exterior-factor>]...
 		exterior-factor ::= ["-"] ( <basis-one-element> | <number> |  | "(" <expression> ")" )
 
 	At the end of the week I did not make it as far as I hoped on this, the way she goes.
@@ -44,6 +46,60 @@
 	   e1 e1 e1 e2, so you sort then you sum
 	   e1
 	   e1, when it doesn't look like you, you add it to the list then you determine the next index, could do that as well
+*/
+
+/*
+	The code, as written, cannot handle k-vectors that are sums of basis elements where
+	the grade of the k-vector > 1. 
+
+	So a bivector in G(R3) == e1e2 + e1e3 can not be expressed as a single k-vector, it is
+	getting added to a list as [e1e2|e1e3] though we may technically need to handle it as a single
+	element (in the case of a span or cospan operation). Therefore, changing up the approach a bit here
+	and want to introduce the idea of using the higher bits of the 'basis_elements' bit-vector to represent elements of grade > 1.
+
+	Right now we use the lower bits; bits 0,1, and 2 to represent say e1, e2 and e3 in G(R3) and say that a bivector like e1e2 has
+	both the e1 and e2 bits set. As mentioned above, this is not a technically feasible approach going forward so we want to use
+	more bits from the 'basis_elements' bit-vector to represent higher-graded objects directly and NOT as a mish-mash of bits of the
+	1-vectors.
+
+	There is a scheme on the k-vectors that actually works out nicely but requires the use of offsets based on the grade.
+
+	Easiest to show as an example. Assume G(R3) though this should work up to dimension 6 which has 64 basis-elements and we would run out of bits with a 64-bit integer.
+	bits:      [0,   1,   2,   3,   4,    5,    6, ...]
+	values:    [1,   2,   4,   8,   16,  32,   64, ...] // powers of two
+
+	elements:  [e1, e2,  e3,  e12, e13, e23, e123, ...]
+			   <---------->   <------------> <--->
+			   	 1-vectors      2-vectors     3-vectors
+			   ^Grade1-offset ^Grade2-offset ^Grade3-offset ...
+
+	Setting the 'bits' indicates which basis elements are included in the k-vector. bit-0 means e1 is present, bit-1 means e2 is present, etc..
+	The 'values' represent the integer value of that bit being set. These values are only important for the basis-1 elements in this scheme.
+
+	Conceptually we divide the 'elements' array into sections based on the grade of the elements.
+	So in the case of G(R3) we have a 3-element section for the 1-elements, followed by a 3-element section for the 2-elements followed by a 1-element section for the 3-elements.
+
+	Those offsets are calculated a single time once we declare the dimension of the space and then we need to determine the bit-index for the element we are interested in.
+	e1 is at bit-index 0 relative to it's starting offset, e1e2 is at bit-index 0 relative to it's starting offset and e1e2e3 is at bit-index 0 relative to it's starting offset.
+
+	How do you calculate the bit-index for an element? The formula is the following.
+		Bit-Index = (Value(Set-1-Bits)/Grade)-1
+
+
+	Look at e1e2 which is the 4th bit (3rd index) in our bit-vector.
+	If you set the bits, e1 and e2 the value of that integer is 3, if you divide this by the grade of the resulting element, 2 in this case, and subtract 1, you get the following:
+	 	Bit-Index = (Sum/Grade)-1 = 3/2 - 1 = 0
+    So if you offset into the 64-bit integer into the 2-vector 'section' you can set the 4th (index 3) bit and know that represents the value e1e2.
+
+    After this example you assume that you can just sum the 1-vectors values and get the correct index but that assumption is incorrect.
+
+    Look at e1e3 which is the 5th bit (4th index) in our bit-vector.
+    Value(e1) + Value(e3) = 5, which is the correct bit but the incorrect index (should be 4).
+    Applying the formula from above gives you:
+    	Bit-Index = (Sum/Grade)-1 = (5/2)-1 = 1
+    Which is the correct index that needs set once you offset into the Grade-2 basis elements section.
+
+
 */
 
 #scope_export
@@ -227,7 +283,7 @@ parse_exterior_term :: ( expression: string ) -> ( node: *Expression_Node, curso
 	factor, cursor = parse_exterior_factor( cursor );
 	cursor = skip_spaces( cursor );
 
-	while cursor && cursor[0] == #char "^" {
+	while cursor && (cursor[0] == #char "^" || cursor[0] == #char "R") {
 		operation: u8;
 		next_factor: *Expression_Node;
 
@@ -351,6 +407,7 @@ print_expression_tree :: ( node: *Expression_Node, indent: int = 0 ) {
 		
 		if binary_operator.operation == {
 			case #char "^"; { print( "^\n" ); }
+			case #char "R"; { print( "R\n" ); }
 			case #char "+"; { print( "+\n" ); }
 			case #char "-"; { print( "-\n" ); }
 			case; print( "Unhandled operator case in print procedure.\n" );
@@ -395,50 +452,64 @@ print_expression_from_expression_tree :: ( node: *Expression_Node ) {
 	return;
 }
 
+clone_k_vector_node :: ( k_vector_node: *K_Vector_Node ) -> ( cloned_node: *K_Vector_Node ) {
+
+	cloned_node := New(K_Vector_Node);
+	cloned_node.kind  			 = Node_Kind.K_Vector;
+	cloned_node.grade 			 = k_vector_node.grade;
+	cloned_node.coefficient 	 = k_vector_node.coefficient;
+	cloned_node.basis_components = k_vector_node.basis_components;
+
+	return cloned_node;
+}
+
+clone_unary_operator_node :: ( unary_operator_node: *Unary_Operator_Node ) -> ( cloned_node: *Unary_Operator_Node ) {
+
+	cloned_node := New(Unary_Operator_Node);
+	cloned_node.kind 	  = Node_Kind.Unary_Operator;
+	cloned_node.operation = unary_operator_node.operation;
+	cloned_node.operand   = clone_node( unary_operator_node.operand );
+
+	return cloned_node;
+}
+
+clone_binary_operator_node :: ( binary_operator_node: *Binary_Operator_Node ) -> ( cloned_node: *Binary_Operator_Node ) {
+
+	cloned_node := New(Binary_Operator_Node);
+	cloned_node.kind 	  	= Node_Kind.Binary_Operator;
+	cloned_node.operation 	= binary_operator_node.operation;
+	cloned_node.left\_operand = clone_node( binary_operator_node.left\_operand );
+	cloned_node.right_operand = clone_node( binary_operator_node.right_operand );
+
+	return cloned_node;
+}
+
 clone_node :: ( node: *Expression_Node ) -> ( cloned_node: *Expression_Node ) {
 		
-	cloned_node: *Expression_Node;
 	if node.kind == Node_Kind.K_Vector {
-		k_vector_node := cast(*K_Vector_Node)node;
-
-		new_node := New(K_Vector_Node);
-
-		new_node.kind = Node_Kind.K_Vector;
-		new_node.grade            = k_vector_node.grade;
-		new_node.coefficient      = k_vector_node.coefficient;
-		new_node.basis_components = k_vector_node.basis_components;
-
-		cloned_node = cast(*Expression_Node)new_node;
+		return cast(*Expression_Node)clone_k_vector_node( cast(*K_Vector_Node)node );
 	}
 	else
 	if node.kind == Node_Kind.Unary_Operator {
-		unary_operator_node := cast(*Unary_Operator_Node)node;
-
-		new_node := New(Unary_Operator_Node);
-		new_node.kind = Node_Kind.Unary_Operator;
-		new_node.operation = unary_operator_node.operation;
-		new_node.operand   = clone_node( unary_operator_node.operand );
-
-		cloned_node = cast(*Expression_Node)new_node;
+		return cast(*Expression_Node)clone_unary_operator_node( cast(*Unary_Operator_Node)node );
 	}
 	else
 	if node.kind == Node_Kind.Binary_Operator {
-		binary_operator_node := cast(*Binary_Operator_Node)node;		
-
-		new_node := New(Binary_Operator_Node);
-		new_node.kind = Node_Kind.Binary_Operator;
-		new_node.operation = binary_operator_node.operation;
-		new_node.left\_operand = clone_node( binary_operator_node.left\_operand );  
-		new_node.right_operand = clone_node( binary_operator_node.right_operand );
-
-		cloned_node = cast(*Expression_Node)new_node;
+		return cast(*Expression_Node)clone_binary_operator_node( cast(*Binary_Operator_Node)node );
 	}
 	else {
 		print( "Unrecognized node kind found when cloning nodes\n" );
-		cloned_node = null;
+		return null;
 	}
+}
 
-	return cloned_node;
+is_grassmann_operator :: ( op: u8 ) -> (bool) {
+	if op == #char "^" || op == #char "R" {
+		return true;
+	}
+	else {
+		return false;
+	}
 }
 
 distribute_grassmann_products :: ( node: *Expression_Node ) -> ( tree: *Expression_Node ) {
@@ -466,18 +537,19 @@ distribute_grassmann_products :: ( node: *Expression_Node ) -> ( tree: *Expressi
 		distribute_over_left\_operand := false;
 		distribute_over_right_operand := false;
 
-		if binary_operator_node.operation == #char "^" && binary_operator_node.left_operand.kind == Node_Kind.Binary_Operator {
-			left_operator = cast(*Binary_Operator_Node)binary_operator_node.left_operand;
-			if left_operator.operation == #char "+" || left_operator.operation == #char "-" {
-				distribute_over_left_operand = true;
+		if is_grassmann_operator(binary_operator_node.operation) {
+			if binary_operator_node.left_operand.kind == Node_Kind.Binary_Operator {
+				left_operator = cast(*Binary_Operator_Node)binary_operator_node.left_operand;
+				if left_operator.operation == #char "+" || left_operator.operation == #char "-" {
+					distribute_over_left_operand = true;
+				}
 			}
-		}
-		else	
-		if binary_operator_node.operation == #char "^" && binary_operator_node.right_operand.kind == Node_Kind.Binary_Operator {
-			right_operator = cast(*Binary_Operator_Node)binary_operator_node.right_operand;
-			if right_operator.operation == #char "+" || right_operator.operation == #char "-" {
-				distribute_over_right_operand = true;
-			}	
+			else if binary_operator_node.right_operand.kind == Node_Kind.Binary_Operator {
+				right_operator = cast(*Binary_Operator_Node)binary_operator_node.right_operand;
+				if right_operator.operation == #char "+" || right_operator.operation == #char "-" {
+					distribute_over_right_operand = true;
+				}	
+			}
 		}
 
 		if distribute_over_left_operand {
@@ -584,9 +656,70 @@ flatten :: ( subtree: *Expression_Node ) -> ( operators: [..] u8, elements: [..]
 	return operators, elements;
 }
 
-eval :: ( operators: [] u8, elements: [] K_Vector_Node ) -> ( k_vectors: [..] K_Vector_Node ) {
+exterior_product2 :: ( lvalue: *K_Vector_Node, rvalue: *K_Vector_Node ) -> ( result: *K_Vector_Node ) {
 
-	exterior_product :: ( lvalue: K_Vector_Node, rvalue: K_Vector_Node ) -> ( result: K_Vector_Node ) {
+		result := New(K_Vector_Node);
+		result.kind = Node_Kind.K_Vector;
+
+		if (lvalue.grade + rvalue.grade) > dimension {
+			result.grade = 0;
+			result.basis_components = 0;
+			result.coefficient = 0;
+		}
+		else
+		if lvalue.grade == 0 || rvalue.grade == 0 {
+			result.grade       	    = lvalue.grade + rvalue.grade;
+			result.basis_components = lvalue.basis_components | rvalue.basis_components;
+			result.coefficient 	    = lvalue.coefficient * rvalue.coefficient;	
+		}
+		else
+		if (lvalue.basis_components & rvalue.basis_components) > 0 {
+			// k-vector arguments share at least one common basis vector and exterior product is zero
+			result.grade 			= 0;
+			result.basis_components = 0;
+			result.coefficient 	    = 0;	
+		}
+		else {
+			// Take the exterior product between the elements and handle the anticommutativity property of the grassmann product.
+			// For every bit (basis one element) in the LEFT argument
+			//	Start at right-most bit in the LEFT arg
+			//  Find it's place in the RIGHT arg and set that bit.
+			//	Anytime you cross over a bit in the RIGHT that is set, then you have swapped the elements.
+			// Rinse and repeat for every other bit in the LEFT.
+			//
+			// If after completing this process we have swapped an odd number of times then we negate the final product.
+
+			result.grade 		= lvalue.grade + rvalue.grade;
+			result.coefficient  = lvalue.coefficient * rvalue.coefficient;
+
+			result.basis_components = rvalue.basis_components;
+			num_swaps: int = 0;
+			for < i: dimension-1..0 {
+				// Start from the rightmost bit in the left argument and determine which bits are set
+				if lvalue.basis_components & (1 << i) {
+					// Bit in the left argument is set, iterate from the leftmost bit in the right argument
+					// and everytime the a bit is set increment the swap counter.
+					// When we get to the location of the bit from the left in the location on the right, set the bit in the result, stop the 'swap' loop and start over with any other bits from the left.
+					for j: 0..dimension-1 {
+						if j == i {
+							result.basis_components |= (1 << j);
+							break;
+						}
+						else
+						if result.basis_components & (1 << j) {
+							num_swaps += 1;	
+						}
+					}
+				}
+			}
+
+			if num_swaps % 2 != 0 { result.coefficient *= -1; }	
+		}
+
+		return result;
+	}
+
+exterior_product :: ( lvalue: K_Vector_Node, rvalue: K_Vector_Node ) -> ( result: K_Vector_Node ) {
 
 		result: K_Vector_Node;
 		result.kind = Node_Kind.K_Vector;
@@ -649,7 +782,11 @@ eval :: ( operators: [] u8, elements: [] K_Vector_Node ) -> ( k_vectors: [..] K_
 		return result;
 	}
 
-	bubble_sort :: ( k_vectors: *[] K_Vector_Node ) {
+
+
+eval :: ( operators: [] u8, elements: [] K_Vector_Node ) -> ( k_vectors: [..] K_Vector_Node ) {
+
+		bubble_sort :: ( k_vectors: *[] K_Vector_Node ) {
 
 		swap: bool     = false;
 		for _: 0..k_vectors.count-1 {
@@ -757,9 +894,9 @@ test :: (
 	 dimension: u8
 	,basis: [] string
 	,expression: string
-	,should_print_expression_tree_post_parsing: 	 bool = false
-	,should_print_expression_tree_post_distribution: bool = false
-	,should_print_expression_tree_post_grassmann_operator_eval: bool = false
+	,should_print_expression_tree_post_parsing: 	 bool = true
+	,should_print_expression_tree_post_distribution: bool = true
+	,should_print_expression_tree_post_grassmann_operator_eval: bool = true
 ) {
 
 	test_case += 1;
@@ -797,23 +934,294 @@ test :: (
 	return;
 }
 
-// This is technically the RIGHT complement
-// I built the complement buddy, now I want to work on spans/cospans because that is the 'expansion' part that is hard to see
-complement :: ( k_vector: K_Vector_Node ) -> ( n_k_vector: K_Vector_Node ) {
+generate_k_span   :: ( element: *K_Vector_Node, k: int ) -> ( k_span: [..] *K_Vector_Node ) {
+	
+	// to generate a k-span you need the 1-span
+	one_span: [..] int;
+	for bit: 0..dimension-1 {
+		if element.basis_components & (1 << bit) {
+			array_add( *one_span, bit );
+		}
+	}
 
-	basis_n_element: K_Vector_Node;
-	basis_n_element.kind        =  Node_Kind.K_Vector;
-	basis_n_element.grade 		= dimension;
-	basis_n_element.coefficient = 1;
-	for i: 0..dimension-1 {
-		basis_n_element.basis_components |= (1 << i);
+	k_span: [..] *K_Vector_Node;
+	k_element     := New(K_Vector_Node);
+	k_element.kind = Node_Kind.K_Vector;
+	if k == 1 {
+		for i: 0..one_span.count-1 {
+			k_element.grade 	  = 1;
+			k_element.coefficient = 1;
+			k_element.basis_components |= (1 << one_span[i]);
+
+			array_add( *k_span, clone_k_vector_node( k_element ) );
+
+			k_element.basis_components &= 0; // reset/clear bits
+		}
+	}
+	else {
+		// build the set of k-elements (k-combinations) from the one-span.
+		// this is O(N^3), probably a better way to do this!
+		one_element := New(K_Vector_Node);
+		for i: 0..one_span.count-1 {
+
+			one_element.grade = 1;
+			one_element.coefficient = 1;
+			one_element.basis_components &= 0;
+			one_element.basis_components |= (1 << one_span[i]);
+			
+			k_element := clone_k_vector_node( one_element );
+
+			for j: i+1..one_span.count-1 {
+
+				num_remaining_one_elements := one_span.count-j;
+		
+				if num_remaining_one_elements >= (k-1) {	
+					s: int = 0;
+					while k_element.grade != k {
+						k_element.basis_components |= (1 << one_span[j+s]);
+						k_element.grade += 1;
+						s += 1;
+					}
+
+					array_add( *k_span, k_element );
+
+					k_element = clone_k_vector_node( one_element );
+				}
+			}
+		}
+	}
+
+	return k_span;
+}
+
+generate_k_cospan :: ( m_element: *K_Vector_Node, k_span: [..] *K_Vector_Node ) -> ( k_cospan: [..] *K_Vector_Node ) {
+
+	anticommutative_coefficient :: ( left: *K_Vector_Node, right: *K_Vector_Node ) -> ( coefficient: int ) {
+		
+		// odd number of swaps between basis components requires a negation of the element's coefficient
+		temp := clone_k_vector_node( right );
+		num_swaps: int = 0;
+		for < i: dimension-1..0 {
+			if left.basis_components & (1 << i) {
+				for j: 0..dimension-1 {
+					if i == j { 
+						temp.basis_components |= (1 << j);
+						break;
+					}
+					else 
+					if temp.basis_components & (1 << j) { 
+						num_swaps += 1;
+					}
+				}
+			}
+		}
+
+		free( temp );
+
+		if num_swaps % 2 == 0 { return 1; }
+		else { return -1; }
+	}
+
+	co_m_element :: ( m_element: *K_Vector_Node, k_element: *K_Vector_Node ) -> ( m_k_element: *K_Vector_Node ) {
+		
+		m_k_element := New(K_Vector_Node);
+		m_k_element.kind  		= Node_Kind.K_Vector;
+		m_k_element.grade 		= m_element.grade - k_element.grade;
+		m_k_element.coefficient = 1;
+		m_k_element.basis_components = m_element.basis_components ^ k_element.basis_components;
+
+		m_k_element.coefficient *= anticommutative_coefficient( k_element, m_k_element );
+
+		return m_k_element;
+	}
+
+	k_cospan: [..] *K_Vector_Node;
+	for k_element: k_span {
+		m_k_element := co_m_element( m_element, k_element );
+		array_add( *k_cospan, m_k_element );
+	}
+
+	return k_cospan;
+}
+
+// should the common factor theorem traverse the whole tree again???
+// not sure i have enough brain juice to answer such questions today, just a passing thought
+//
+// notes: 
+//  this partial eval is bugging me, it should be part of applying the common factor theorem
+//  also we shouldn't use an exterior_product2 to do anything in here, that needs cleaned up as well
+
+common_factor_theorem :: ( node: *Expression_Node ) -> ( tree: *Expression_Node ) {
+
+	// This procedure returns a new subtree that has the common factor theorem applied a regressive product node.
+	// The common factor theorem from Grassmann algebra expands into a sum of regressive products between N-elements and k-span elements.
+	
+	common_factor_theorem_helper :: ( node: *Expression_Node ) -> ( tree: *Expression_Node ) {
+	
+		subtree: *Expression_Node;
+		if node.kind != Node_Kind.Binary_Operator {
+			subtree = clone_node( node );	
+		}
+
+		binary_operator_node := cast(*Binary_Operator_Node)node;
+		if binary_operator_node.operation == #char "R" {
+			new_\left_node := cast(*K_Vector_Node)partial_eval( binary_operator_node.left\_operand );
+			new_right_node := cast(*K_Vector_Node)partial_eval( binary_operator_node.right_operand );
+			
+			if (new_left_node.grade + new_right_node.grade) < dimension {
+				// this regressive product will be zero, so don't bother expanding
+				subtree = clone_node( node );
+			}
+			else {
+
+				// generate the k-span and k-cospan of the right node
+				// Example: R = e1^e3^e4, spanning grade = 1
+				//  1-span:   [e1,e3,e4]  
+				//  1-cospan: [e3e4,-e1e4, e1e3] 
+
+				span_grade := dimension - new_left_node.grade;
+				k_span:   [..] *K_Vector_Node = generate_k_span\ ( new_right_node, span_grade );
+				k_cospan: [..] *K_Vector_Node = generate_k_cospan( new_right_node, k_span );
+
+				// build the regressive product subtrees from the k-span and k-cospan elements
+				// Example: using the span and cospan in the above example
+				// regressive_product_subtrees: [subtree0, subtree1, subtree2, ...]
+				//   where subtree0 =    	R
+				//                     	 ^    k-cospan[0]
+				//                     L  k-span[0] 
+
+				regressive_product_subtrees: [..] *Binary_Operator_Node;
+				for i: 0..k_span.count-1 {
+
+					regressive_product_node := New(Binary_Operator_Node);
+					regressive_product_node.kind = Node_Kind.Binary_Operator;
+					regressive_product_node.operation = #char "R";
+				
+					exterior_product_node := New(Binary_Operator_Node);
+					exterior_product_node.kind = Node_Kind.Binary_Operator;
+					exterior_product_node.operation = #char "^";
+					exterior_product_node.left\_operand = cast(*Expression_Node)clone_k_vector_node(new_\left_node); 
+					exterior_product_node.right_operand = cast(*Expression_Node)k_span[i];
+
+					regressive_product_node.left\_operand = cast(*Expression_Node)exterior_product_node;
+					regressive_product_node.right_operand = cast(*Expression_Node)k_cospan[i];
+
+					array_add( *regressive_product_subtrees, regressive_product_node );
+				}
+
+				// generate the new root node with the sums of the regressive product subtrees created above
+				// Example: convert the subtrees into a tree 'sum'
+				// regressive_product_subtrees: [subtree0, subtree1, subtree2, subtree3]
+				//      		+
+				// 		subtree0    +
+				//      	subtree1 	+
+				//        		subtree2 subtree3
+
+
+				if regressive_product_subtrees.count == 1 {
+					subtree = cast(*Expression_Node)regressive_product_subtrees[0];
+				}
+				else {
+
+					sum_node := New(Binary_Operator_Node);
+					sum_node.kind 	      = Node_Kind.Binary_Operator;
+					sum_node.operation    = #char "+";
+				
+					root := clone_binary_operator_node( sum_node );
+					
+					i: int = 0;
+					current := root;
+					while i < regressive_product_subtrees.count-1 {
+						current.left_operand = cast(*Expression_Node)regressive_product_subtrees[i];
+						next := clone_binary_operator_node( sum_node );
+						current.right_operand = cast(*Expression_Node)next;
+						current = next;
+
+						i += 1;
+					}
+
+					current.right_operand = cast(*Expression_Node)regressive_product_subtrees[i];
+				
+					subtree = cast(*Expression_Node)root;
+				}
+			}
+		}
+
+		return subtree;
+	} 
+	 
+	tree: *Expression_Node;
+	tree = common_factor_theorem_helper( node );	
+	return tree;
+}
+
+partial_eval :: ( node: *Expression_Node ) -> ( k_vector: *Expression_Node ) {
+	
+	// when you get called here you will be at a wedge operator, left or right could be a single element or a wedge product
+	subtree: *Expression_Node;
+	if node.kind == Node_Kind.K_Vector {
+		subtree = clone_node( node );
+	}
+	else if node.kind == Node_Kind.Binary_Operator {
+		binary_operator_node := cast(*Binary_Operator_Node)node;
+		left: *Expression_Node;
+		right: *Expression_Node;
+
+		if binary_operator_node.left_operand.kind == Node_Kind.Binary_Operator {
+			left = partial_eval( binary_operator_node.left_operand );
+		}
+		else
+		if binary_operator_node.right_operand.kind == Node_Kind.Binary_Operator {
+			right = partial_eval( binary_operator_node.right_operand );
+		}
+
+		if binary_operator_node.operation == #char "^" {
+			subtree = cast(*Expression_Node)exterior_product2( cast(*K_Vector_Node)left, cast(*K_Vector_Node)right );
+		}
+		else {
+			print( "Operator other than exterior product in the common factor theorem, investigate\n" );
+			subtree = null;
+		}
+	}
+	else {
+		print( "Partial eval for common factor theorem has an unexpected node type in here, probably just need to add the code for it\n" );
+		subtree = null;
+	}
+
+	return subtree;	
+}
+
+/*
+distribute_grassmann_products
+apply_the_common_factor_theorem
+  eval the left and right subtress to return the final k-vector (these should be k-vectors)
+  then look at the grades to determine what to do next
+  	if the grades sum less than the dimension then leave untouched, can't apply the CFT 
+  	otherwise we want to do the span and cospan, so get back a list of span and co-span elements then build the subtrees
+  	which end up as R between the wedge product of one of the subtrees (pick one, say left) and the cospan elements and the span element and then you have your tree
+  	this seems like a tremendous amount of work but you got this kevbo!!!
+*/
+
+// This is technically the RIGHT complement
+complement :: ( k_vector: K_Vector_Node, N: int ) -> ( n_k_vector: K_Vector_Node ) {
+
+	// The N-element is dependent on the user-supplied value of N.
+	// Typically, N will be set to the dimension of the space, however when generating a span or cospan of an element
+	// we can use this same logic by using the M-element to be the N-element for purposes of the operation.
+
+	n_element: K_Vector_Node;
+	n_element.kind        = Node_Kind.K_Vector;
+	n_element.grade 	  = N;
+	n_element.coefficient = 1;
+	for i: 0..N-1 {
+		n_element.basis_components |= (1 << i);
 	}
 
 	n_k_vector: K_Vector_Node;
 	n_k_vector.kind             =  Node_Kind.K_Vector;
-	n_k_vector.grade 	    	=  dimension - k_vector.grade;
+	n_k_vector.grade 	    	=  N - k_vector.grade;
 	n_k_vector.coefficient 	 	=  k_vector.coefficient;
-	n_k_vector.basis_components =  k_vector.basis_components ^ basis_n_element.basis_components; // XOR
+	n_k_vector.basis_components =  k_vector.basis_components ^ n_element.basis_components; // XOR
 
 
 	// The exterior product of (k)-Vector and an (N-k)-Vector is a scalar multiple of the (N)-Vector.
@@ -824,7 +1232,7 @@ complement :: ( k_vector: K_Vector_Node ) -> ( n_k_vector: K_Vector_Node ) {
 	n_vector: K_Vector_Node = n_k_vector;
 	
 	num_swaps: int = 0;
-	for < i: dimension-1..0 {
+	for < i: N-1..0 {
 		// Start from the rightmost bit in the left argument and determine which bits are set
 		if k_vector.basis_components & (1 << i) {
 			// Bit in the left argument is set, iterate from the leftmost bit in the right argument
@@ -850,6 +1258,7 @@ complement :: ( k_vector: K_Vector_Node ) -> ( n_k_vector: K_Vector_Node ) {
 
 main :: () {
 
+/*
 {
 	set_dimension( 3 );
 	set_basis_one_elements( string.["e1","e2","e3"] );
@@ -859,7 +1268,7 @@ main :: () {
 	e1.grade = 1;
 	e1.coefficient = 1;
 
-	e2e3 := complement( e1 );
+	e2e3 := complement( e1, N=dimension );
 	print( "Debugger\n" );
 
 }
@@ -873,7 +1282,7 @@ main :: () {
 	e2.grade = 1;
 	e2.coefficient = 1;
 
-	e1e3 := complement( e2 );
+	e1e3 := complement( e2, N = dimension );
 	print( "Debugger\n" );
 }
 
@@ -887,7 +1296,7 @@ main :: () {
 	e1e3.grade = 2;
 	e1e3.coefficient = 1;
 
-	e2 := complement( e1e3 );
+	e2 := complement( e1e3, N = dimension );
 	print( "Debugger\n" );
 
 }
@@ -902,7 +1311,7 @@ main :: () {
 	e2.grade = 1;
 	e2.coefficient = 1;
 
-	e1 := complement( e2 );
+	e1 := complement( e2, N = dimension );
 	print( "Debugger\n" );
 
 }
@@ -917,7 +1326,7 @@ main :: () {
 	_e1.grade = 1;
 	_e1.coefficient = 1;
 
-	_e2 := complement( _e1 );
+	_e2 := complement( _e1, N = dimension );
 	print( "Debugger\n" );
 
 }
@@ -932,7 +1341,7 @@ main :: () {
 	e12.grade = 2;
 	e12.coefficient = 1;
 
-	e34 := complement( e12 );
+	e34 := complement( e12, N = dimension );
 	print( "Debugger\n" );
 }
 
@@ -946,7 +1355,7 @@ main :: () {
 	e1.grade = 1;
 	e1.coefficient = 1;
 
-	e234 := complement( e1 );
+	e234 := complement( e1, N = dimension );
 	print( "Debugger\n" );
 }
 
@@ -960,18 +1369,85 @@ main :: () {
 	e2.grade = 1;
 	e2.coefficient = 1;
 
-	e134 := complement( e2 );
+	e134 := complement( e2, N = dimension );
 	print( "Debugger\n" );
 }
 
+*/
 
+// THE FOLLOWING TWO SECTIONS ARE THE GENERATE-K-SPAN and GENERATE-K-COSPAN TESTS
+{
+	k_vector := New(K_Vector_Node);
+	k_vector.grade = 4;
+	for i: 0..3 {
+		k_vector.basis_components |= (1 << i);
+	}
+	print( "Basis components == %\n", k_vector.basis_components );
 
+	m_k_cospan: [..] K_Vector_Node;
+	m_k_element: K_Vector_Node;
 
+	k_span := generate_k_span( k_vector, 1 );
+	for i: 0..k_span.count-1 {
+		print( "(Grade,Coefficient,Basis-Components) == (%,%,%)\n", k_span[i].grade, k_span[i].coefficient, k_span[i].basis_components );
+	}
+	print( "\n" );
+
+	k_span = generate_k_span( k_vector, 2);
+	for i: 0..k_span.count-1 {
+		print( "(Grade,Coefficient,Basis-Components) == (%,%,%)\n", k_span[i].grade, k_span[i].coefficient, k_span[i].basis_components );
+	}
+	print( "\n" );
+	
+
+	k_span = generate_k_span( k_vector, 3); // this doesn't work in a 4-space,
+	for i: 0..k_span.count-1 {
+		print( "(Grade,Coefficient,Basis-Components) == (%,%,%)\n", k_span[i].grade, k_span[i].coefficient, k_span[i].basis_components );
+	}
+	print( "\n" );
+
+	// 1 2 4 8 
+	// 
+
+	print( "This is for the 4 span of the element\n" );
+	k_span = generate_k_span( k_vector, 4);
+	for i: 0..k_span.count-1 {
+		print( "(Grade,Coefficient,Basis-Components) == (%,%,%)\n", k_span[i].grade, k_span[i].coefficient, k_span[i].basis_components );
+	}
+	print( "\n" );
+}
+
+{
+	m_element := New(K_Vector_Node);
+	m_element.grade = 3;
+	m_element.basis_components |= (1 << 0); // e1
+	m_element.basis_components |= (1 << 2); // e3
+	m_element.basis_components |= (1 << 3); // e4
+
+	k_span   := generate_k_span( m_element, 1 );
+	k_cospan := generate_k_cospan( m_element, k_span );
+
+	print( "SPAN:\n" );
+	for i: 0..k_span.count-1 {
+		print( "(Grade,Coefficient,Basis-Components) == (%,%,%)\n", k_span[i].grade, k_span[i].coefficient, k_span[i].basis_components );
+	}
+	print( "\n" );
+
+	// the number of swaps doesn't look right, but we need to take a mental break i can feel it, time for a walk and X
+	print( "COSPAN:\n" );
+	for i: 0..k_span.count-1 {
+		print( "(Grade,Coefficient,Basis-Components) == (%,%,%)\n", k_cospan[i].grade, k_cospan[i].coefficient, k_cospan[i].basis_components );
+	}
+	print( "\n" );
+}
+
+// THIS IS THE ORIGINAL TESTING OF THE TOP-LEVEL FUNCTIONS
+
+test( dimension = 3, basis = string.["e1","e2","e3"], expression = "(e1^e2)R(e1^e3)" );	
+test( dimension = 3, basis = string.["e1","e2","e3"], expression = "e1 R (e1 + e2)" );	
+test( dimension = 5, basis = string.["e1","e2","e3","e4","e5"], expression = "(e1^e2^e3)+(e2^e3^e4)+(e1^e4^e5)" );
 
 /*
-
-	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "e1-e3+e2" );
-
 	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "3" );
 	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "3^3" ); // the sum might be broken, that's okay though
 	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "e1^e2" );
