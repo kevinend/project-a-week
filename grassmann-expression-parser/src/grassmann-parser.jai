@@ -102,35 +102,13 @@
 
 #scope_export
 
-dimension: u8 = 0;
+// globals:
+dimension: int = 0;
 basis_one_elements: [..] string;
+n_element: int;
 test_case: int = 0;
 
-set_dimension :: ( N: u8 ) {
-
-	assert( N > 0 );
-
-	dimension = N;
-	return;
-}
-
-set_basis_one_elements :: ( symbols: [] string ) {
-
-	assert( symbols.count == dimension );
-	assert( symbols.count > 0 );
-
-	if basis_one_elements.count > 0 {
-		array_reset( *basis_one_elements );
-	}
-
-	// copy the symbols over into our global symbol/basis elements table
-	for symbol: symbols {
-		array_add(*basis_one_elements, symbol );
-	}
-
-	return;
-}
-
+// data structures:
 Node_Kind :: enum {
 	K_Vector;
 	Unary_Operator;  // complement (lcomp, rcomp)
@@ -168,6 +146,46 @@ Binary_Operator_Node :: struct {
 	operation: u8;
 	left_\operand: *Expression_Node;
 	right_operand: *Expression_Node;
+}
+
+Complement_Variant :: enum {
+	 LEFT;
+	 RIGHT;
+}
+
+
+// procedures:
+init_dimension :: ( N: int ) {
+
+	// implmentation uses a single 64-bit integer to represent basis-one-elements.
+	// dimension must be a positive integer and less than 64
+
+	assert( N > 0  );
+	assert( N < 64 ); 
+
+	dimension = N;
+
+	for i: 0..N-1 {
+		n_element |= (1 << i);
+	}
+
+	return;
+}
+
+init_basis_one_elements :: ( one_element_symbols: [] string ) {
+
+	// TODO: check that there aren't duplicates passed in here by the caller
+
+	assert( one_element_symbols.count == dimension );
+
+	if basis_one_elements.count > 0 { array_reset( *basis_one_elements ); }
+
+	// copy the symbols over into our global symbol/basis elements table
+	for one_element_symbol: one_element_symbols {
+		array_add(*basis_one_elements, one_element_symbol );
+	}
+
+	return;
 }
 
 skip_spaces :: ( s: string ) -> ( cursor: string ) {
@@ -672,33 +690,36 @@ generate_k_span   :: ( element: *K_Vector_Node, k: int ) -> ( k_span: [..] *K_Ve
 	return k_span;
 }
 
-generate_k_cospan :: ( m_element: *K_Vector_Node, k_span: [..] *K_Vector_Node ) -> ( k_cospan: [..] *K_Vector_Node ) {
+anticommutative_coefficient :: ( lvalue: *K_Vector_Node, rvalue: *K_Vector_Node ) -> ( coefficient: int ) {
 
-	anticommutative_coefficient :: ( left: *K_Vector_Node, right: *K_Vector_Node ) -> ( coefficient: int ) {
-		
-		// odd number of swaps between basis components requires a negation of the element's coefficient
-		temp := clone_k_vector_node( right );
-		num_swaps: int = 0;
-		for < i: dimension-1..0 {
-			if left.basis_components & (1 << i) {
-				for j: 0..dimension-1 {
-					if i == j { 
-						temp.basis_components |= (1 << j);
-						break;
-					}
-					else 
-					if temp.basis_components & (1 << j) { 
-						num_swaps += 1;
-					}
+	// This procedure calculates the number of swaps required to reorder the elements into the 'canonical' ordering.
+	// If the number of swaps is odd then the product needs negated.
+
+	// The current implementation forces an ordering of 1-elements such that the exterior product of (e2^e1)^e3
+	// will automatically be reordered to the positive (scalar factor is positive) product e1^e2^e3.
+
+	temp: int = rvalue.basis_components;
+	num_swaps: int = 0;
+	for < i: dimension-1..0 {
+		if lvalue.basis_components & (1 << i) {
+			for j: 0..dimension-1 {
+				if i == j { 
+					temp |= (1 << j);
+					break;
+				}
+				else 
+				if temp & (1 << j) { 
+					num_swaps += 1;
 				}
 			}
 		}
-
-		free( temp );
-
-		if num_swaps % 2 == 0 { return 1; }
-		else { return -1; }
 	}
+
+	if num_swaps % 2 == 0 { return 1; }
+	else { return -1; }
+}
+
+generate_k_cospan :: ( m_element: *K_Vector_Node, k_span: [..] *K_Vector_Node ) -> ( k_cospan: [..] *K_Vector_Node ) {
 
 	co_m_element :: ( m_element: *K_Vector_Node, k_element: *K_Vector_Node ) -> ( m_k_element: *K_Vector_Node ) {
 		
@@ -1153,57 +1174,26 @@ eval :: ( operators: [] u8, elements: [] K_Vector_Node ) -> ( k_vectors: [..] K_
 	return results;
 }
 
-// NEED THIS FOR THE UNARY COMPLEMENT OPERATOR, LEAVE UNTOUCHED FOR NOW
-complement :: ( k_vector: K_Vector_Node, N: int ) -> ( n_k_vector: K_Vector_Node ) {
+complement :: ( variant: Complement_Variant, k_vector: *K_Vector_Node ) -> ( n_k_vector: *K_Vector_Node ) {
 	
-	// This is the RIGHT complement!!!
-	// The N-element is dependent on the user-supplied value of N.
-	// Typically, N will be set to the dimension of the space, however when generating a span or cospan of an element
-	// we can use this same logic by using the M-element to be the N-element for purposes of the operation.
-
-	n_element: K_Vector_Node;
-	n_element.kind        = Node_Kind.K_Vector;
-	n_element.grade 	  = N;
-	n_element.coefficient = 1;
-	for i: 0..N-1 {
-		n_element.basis_components |= (1 << i);
-	}
-
-	n_k_vector: K_Vector_Node;
+	n_k_vector := New(K_Vector_Node);
 	n_k_vector.kind             =  Node_Kind.K_Vector;
-	n_k_vector.grade 	    	=  N - k_vector.grade;
+	n_k_vector.grade 	    	=  dimension - k_vector.grade;
 	n_k_vector.coefficient 	 	=  k_vector.coefficient;
-	n_k_vector.basis_components =  k_vector.basis_components ^ n_element.basis_components; // XOR
+	n_k_vector.basis_components =  k_vector.basis_components ^ n_element; // XOR
 
+	// Need to determine whether the (n-k)-element should be negated.
+	// The procedure below effectively takes the exterior product between the args and determines the number
+	// of swaps required to build the final N element from the product of the (n-k)-element or the k-element
+	// or vice versa depending on whether this is a left or right complement.
 
-	// The exterior product of (k)-Vector and an (N-k)-Vector is a scalar multiple of the (N)-Vector.
-	// To determine the number of swaps and therefore the sign of the coefficient of the complement 
-	// we take the exterior product between the (k)-Vector and (N-K)-Vector and generate the N-vector.
-	// If the number of swaps is odd then we negate the coefficient on the complement (n-k)-Vector.
-
-	n_vector: K_Vector_Node = n_k_vector;
-	
-	num_swaps: int = 0;
-	for < i: N-1..0 {
-		// Start from the rightmost bit in the left argument and determine which bits are set
-		if k_vector.basis_components & (1 << i) {
-			// Bit in the left argument is set, iterate from the leftmost bit in the right argument
-			// and everytime the a bit is set increment the swap counter.
-			// When we get to the location of the bit from the left in the location on the right, set the bit in the result, stop the 'swap' loop and start over with any other bits from the left.
-			for j: 0..dimension-1 {
-				if j == i {
-					n_vector.basis_components |= (1 << j);
-					break;
-				}
-				else
-				if n_vector.basis_components & (1 << j) {
-					num_swaps += 1;	
-				}
-			}
-		}
+	if variant == Complement_Variant.LEFT {
+		n_k_vector.coefficient *= anticommutative_coefficient( n_k_vector, k_vector );
+	} 
+	else
+	if variant == Complement_Variant.RIGHT {
+		n_k_vector.coefficient *= anticommutative_coefficient( k_vector, n_k_vector );
 	}
-
-	if num_swaps % 2 != 0 { n_k_vector.coefficient *= -1; }	
 
 	return n_k_vector;
 }
@@ -1220,8 +1210,8 @@ test :: (
 
 	test_case += 1;
 
-	set_dimension( N = dimension );
-	set_basis_one_elements( basis );
+	init_dimension( N = dimension );
+	init_basis_one_elements( basis );
 
 	print( "Test case %:\n", test_case );
 	print( "Original Expression: %\n", expression );
@@ -1259,128 +1249,123 @@ test :: (
 	return;
 }
 
-
-
-
 main :: () {
 
 // THIS SECTION IS COMPLEMENT TESTING!
-/*
 {
-	set_dimension( 3 );
-	set_basis_one_elements( string.["e1","e2","e3"] );
+	init_dimension( 3 );
+	init_basis_one_elements( string.["e1","e2","e3"] );
 
 	e1: K_Vector_Node;
 	e1.basis_components = 1;
 	e1.grade = 1;
 	e1.coefficient = 1;
 
-	e2e3 := complement( e1, N=dimension );
+	e2e3 := complement( .RIGHT, *e1 );
 	print( "Debugger\n" );
 
 }
 
 {
-	set_dimension( 3 );
-	set_basis_one_elements( string.["e1","e2","e3"] );
+	init_dimension( 3 );
+	init_basis_one_elements( string.["e1","e2","e3"] );
 
 	e2: K_Vector_Node;
 	e2.basis_components = 2;
 	e2.grade = 1;
 	e2.coefficient = 1;
 
-	e1e3 := complement( e2, N = dimension );
+	e1e3 := complement( .RIGHT, *e2 );
 	print( "Debugger\n" );
 }
 
 {
 
-	set_dimension( 3 );
-	set_basis_one_elements( string.["e1","e2","e3"] );
+	init_dimension( 3 );
+	init_basis_one_elements( string.["e1","e2","e3"] );
 
 	e1e3: K_Vector_Node;
 	e1e3.basis_components = 5;
 	e1e3.grade = 2;
 	e1e3.coefficient = 1;
 
-	e2 := complement( e1e3, N = dimension );
+	e2 := complement( .RIGHT, *e1e3 );
 	print( "Debugger\n" );
 
 }
 
 {
 
-	set_dimension( 2 );
-	set_basis_one_elements( string.["e1","e2"] );
+	init_dimension( 2 );
+	init_basis_one_elements( string.["e1","e2"] );
 
 	e2: K_Vector_Node;
 	e2.basis_components = 2;
 	e2.grade = 1;
 	e2.coefficient = 1;
 
-	e1 := complement( e2, N = dimension );
+	e1 := complement( .RIGHT, *e2 );
 	print( "Debugger\n" );
 
 }
 
 {
 
-	set_dimension( 2 );
-	set_basis_one_elements( string.["e1","e2"] );
+	init_dimension( 2 );
+	init_basis_one_elements( string.["e1","e2"] );
 
 	_e1: K_Vector_Node;
 	_e1.basis_components = 1;
 	_e1.grade = 1;
 	_e1.coefficient = 1;
 
-	_e2 := complement( _e1, N = dimension );
+	_e2 := complement( .RIGHT, *_e1 );
 	print( "Debugger\n" );
 
 }
 
 {
 
-	set_dimension( 4 );
-	set_basis_one_elements( string.["e1","e2","e3","e4"] );
+	init_dimension( 4 );
+	init_basis_one_elements( string.["e1","e2","e3","e4"] );
 
 	e12: K_Vector_Node;
 	e12.basis_components = 3;
 	e12.grade = 2;
 	e12.coefficient = 1;
 
-	e34 := complement( e12, N = dimension );
+	e34 := complement( .RIGHT, *e12 );
 	print( "Debugger\n" );
 }
 
 {
 
-	set_dimension( 4 );
-	set_basis_one_elements( string.["e1","e2","e3","e4"] );
+	init_dimension( 4 );
+	init_basis_one_elements( string.["e1","e2","e3","e4"] );
 
 	e1: K_Vector_Node;
 	e1.basis_components = 1;
 	e1.grade = 1;
 	e1.coefficient = 1;
 
-	e234 := complement( e1, N = dimension );
+	e234 := complement( .RIGHT, *e1 );
 	print( "Debugger\n" );
 }
 
 {
 
-	set_dimension( 4 );
-	set_basis_one_elements( string.["e1","e2","e3","e4"] );
+	init_dimension( 4 );
+	init_basis_one_elements( string.["e1","e2","e3","e4"] );
 
 	e2: K_Vector_Node;
 	e2.basis_components = 2;
 	e2.grade = 1;
 	e2.coefficient = 1;
 
-	e134 := complement( e2, N = dimension );
+	e134 := complement( .RIGHT, *e2 );
 	print( "Debugger\n" );
 }
 
-*/
 
 // THE FOLLOWING TWO SECTIONS ARE THE GENERATE-K-SPAN and GENERATE-K-COSPAN TESTS
 
