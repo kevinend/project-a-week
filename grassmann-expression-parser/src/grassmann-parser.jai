@@ -951,88 +951,70 @@ flatten :: ( subtree: *Expression_Node ) -> ( operators: [..] u8, elements: [..]
 // or do we want simplify to return the list then flatten is to take the products and sort them or something
 // maybe we replace eval then we just traverse the tree and if the operation is a sum then we add it to the list or something
 // i am not exactly sure what we want to do here yet
-exterior_product :: ( lvalue: K_Vector_Node, rvalue: K_Vector_Node ) -> ( result: *K_Vector_Node ) {
+exterior_product :: ( lvalue: *K_Vector_Node, rvalue: *K_Vector_Node ) -> ( result: *K_Vector_Node ) {
 
-		result := New(K_Vector_Node);
-		result.kind = Node_Kind.K_Vector;
+	// assume the result is zero, change it if it isn't the case
+	result 		:= New(K_Vector_Node);
+	result.kind  = Node_Kind.K_Vector;
+	result.coefficient      = 0;
+	result.grade 			= 0;
+	result.basis_components = 0;
 
-		if (lvalue.grade + rvalue.grade) > dimension {
-			result.grade = 0;
-			result.basis_components = 0;
-			result.coefficient = 0;
-		}
-		else
-		if lvalue.grade == 0 || rvalue.grade == 0 {
-			result.grade       	    = lvalue.grade + rvalue.grade;
-			result.basis_components = lvalue.basis_components | rvalue.basis_components;
-			result.coefficient 	    = lvalue.coefficient * rvalue.coefficient;	
-		}
-		else
-		if (lvalue.basis_components & rvalue.basis_components) > 0 {
-			// k-vector arguments share at least one common basis vector and exterior product is zero
-			result.grade 			= 0;
-			result.basis_components = 0;
-			result.coefficient 	    = 0;	
-		}
-		else {
-			// Take the exterior product between the elements and handle the anticommutativity property of the grassmann product.
-			// For every bit (basis one element) in the LEFT argument
-			//	Start at right-most bit in the LEFT arg
-			//  Find it's place in the RIGHT arg and set that bit.
-			//	Anytime you cross over a bit in the RIGHT that is set, then you have swapped the elements.
-			// Rinse and repeat for every other bit in the LEFT.
-			//
-			// If after completing this process we have swapped an odd number of times then we negate the final product.
+	if lvalue.grade == 0 || rvalue.grade == 0 {
+		result.grade       	    = lvalue.grade + rvalue.grade;
+		result.basis_components = lvalue.basis_components | rvalue.basis_components;
+		result.coefficient 	    = lvalue.coefficient * rvalue.coefficient;	
+	}
+	else
+	if (lvalue.basis_components & rvalue.basis_components) == 0 { // no one elements in common implies sum of grades is less than or equal to N
+		// Take the exterior product between the elements and handle the anticommutativity property of the grassmann product.
+		// For every bit (basis one element) in the LEFT argument
+		//	Start at right-most bit in the LEFT arg
+		//  Find it's place in the RIGHT arg and set that bit.
+		//	Anytime you cross over a bit in the RIGHT that is set, then you have swapped the elements.
+		// Rinse and repeat for every other bit in the LEFT.
+		//
+		// If after completing this process we have swapped an odd number of times then we negate the final product.
 
-			result.grade 		= lvalue.grade + rvalue.grade;
-			result.coefficient  = lvalue.coefficient * rvalue.coefficient;
+		result.grade 		= lvalue.grade + rvalue.grade;
+		result.coefficient  = lvalue.coefficient * rvalue.coefficient;
 
-			result.basis_components = rvalue.basis_components;
-			num_swaps: int = 0;
-			for < i: dimension-1..0 {
-				// Start from the rightmost bit in the left argument and determine which bits are set
-				if lvalue.basis_components & (1 << i) {
-					// Bit in the left argument is set, iterate from the leftmost bit in the right argument
-					// and everytime the a bit is set increment the swap counter.
-					// When we get to the location of the bit from the left in the location on the right, set the bit in the result, stop the 'swap' loop and start over with any other bits from the left.
-					for j: 0..dimension-1 {
-						if j == i {
-							result.basis_components |= (1 << j);
-							break;
-						}
-						else
-						if result.basis_components & (1 << j) {
-							num_swaps += 1;	
-						}
+		result.basis_components = rvalue.basis_components;
+		num_swaps: int = 0;
+		for < i: dimension-1..0 {
+			// Start from the rightmost bit in the left argument and determine which bits are set
+			if lvalue.basis_components & (1 << i) {
+				// Bit in the left argument is set, iterate from the leftmost bit in the right argument
+				// and everytime the a bit is set increment the swap counter.
+				// When we get to the location of the bit from the left in the location on the right, set the bit in the result, stop the 'swap' loop and start over with any other bits from the left.
+				for j: 0..dimension-1 {
+					if j == i {
+						result.basis_components |= (1 << j);
+						break;
+					}
+					else
+					if result.basis_components & (1 << j) {
+						num_swaps += 1;	
 					}
 				}
 			}
-
-			if num_swaps % 2 != 0 { result.coefficient *= -1; }	
 		}
 
-		return result;
+		if num_swaps % 2 != 0 { result.coefficient *= -1; }	
+	}
+
+	return result;
 }
 
 regressive_product :: ( lvalue: *K_Vector_Node, rvalue: *K_Vector_Node ) -> ( result: *K_Vector_Node ) {
 
-	result := New(K_Vector_Node);
-	result.kind = Node_Kind.K_Vector;
+	// assume the result is zero, change it if it isn't the case
+	result      := New(K_Vector_Node);
+	result.kind  = Node_Kind.K_Vector;
+	result.basis_components = 0;
+	result.grade 			= 0;
+	result.coefficient      = 0;
 
-	// The way this is currently written we always expand the RIGHT operand in a regressive product
-	// then we take the EXTERIOR product between the original LEFT operand and the k-cospan RIGHT argument.
-	// so we want to check is the LEFT argument of this subtree
-	//
-	// so to make this allow expansion of the left or right we need to check whether one argument
-
-	if lvalue.grade < dimension && rvalue.grade < dimension {
-		// After applying the common factor theorem, to either the right or left argument neither expansion created an N-element
-		// so the product is zero.
-		result.grade = 0;
-		result.basis_components = 0;
-		result.coefficient = 0;
-	}
-	else
 	if lvalue.grade == dimension {
 		// return the right-operand 
 		result.grade 	   		= rvalue.grade;
@@ -1045,12 +1027,6 @@ regressive_product :: ( lvalue: *K_Vector_Node, rvalue: *K_Vector_Node ) -> ( re
 		result.grade 			= lvalue.grade;
 		result.coefficient 		= lvalue.coefficient * rvalue.coefficient;
 		result.basis_components = rvalue.basis_components; 
-	}
-	else {
-		print( "In regressive product, our if/else conditions don't handle the current case, investigate\n" );
-		result.grade = 0;
-		result.basis_components = 0;
-		result.coefficient = 0;
 	}
 
 	return result;
@@ -1139,7 +1115,7 @@ eval :: ( operators: [] u8, elements: [] K_Vector_Node ) -> ( k_vectors: [..] K_
 		op = operators[i];
 		rvalue = elements[i+1];
 		if op == #char "^" { 
-			lvalue = exterior_product( lvalue, rvalue ); 
+			lvalue = exterior_product( *lvalue, *rvalue ); 
 		}
 		else
 		if op == #char "R" {
@@ -1262,7 +1238,7 @@ main :: () {
 	e1.coefficient = 1;
 
 	e2e3 := complement( .RIGHT, *e1 );
-	print( "Debugger\n" );
+	print_expression_tree( cast(*Expression_Node)e2e3 );
 
 }
 
@@ -1276,9 +1252,9 @@ main :: () {
 	e2.coefficient = 1;
 
 	e1e3 := complement( .RIGHT, *e2 );
-	print( "Debugger\n" );
+	print_expression_tree( cast(*Expression_Node)e1e3 );
 }
-
+ 
 {
 
 	init_dimension( 3 );
@@ -1290,12 +1266,11 @@ main :: () {
 	e1e3.coefficient = 1;
 
 	e2 := complement( .RIGHT, *e1e3 );
-	print( "Debugger\n" );
+	print_expression_tree( cast(*Expression_Node)e2 );
 
 }
 
 {
-
 	init_dimension( 2 );
 	init_basis_one_elements( string.["e1","e2"] );
 
@@ -1305,12 +1280,10 @@ main :: () {
 	e2.coefficient = 1;
 
 	e1 := complement( .RIGHT, *e2 );
-	print( "Debugger\n" );
-
+	print_expression_tree( cast(*Expression_Node)e1 );
 }
 
 {
-
 	init_dimension( 2 );
 	init_basis_one_elements( string.["e1","e2"] );
 
@@ -1320,12 +1293,10 @@ main :: () {
 	_e1.coefficient = 1;
 
 	_e2 := complement( .RIGHT, *_e1 );
-	print( "Debugger\n" );
-
+	print_expression_tree( cast(*Expression_Node)_e2 );
 }
 
 {
-
 	init_dimension( 4 );
 	init_basis_one_elements( string.["e1","e2","e3","e4"] );
 
@@ -1335,7 +1306,7 @@ main :: () {
 	e12.coefficient = 1;
 
 	e34 := complement( .RIGHT, *e12 );
-	print( "Debugger\n" );
+	print_expression_tree( cast(*Expression_Node)e34 );
 }
 
 {
@@ -1349,7 +1320,7 @@ main :: () {
 	e1.coefficient = 1;
 
 	e234 := complement( .RIGHT, *e1 );
-	print( "Debugger\n" );
+	print_expression_tree( cast(*Expression_Node)e234 );
 }
 
 {
@@ -1363,7 +1334,7 @@ main :: () {
 	e2.coefficient = 1;
 
 	e134 := complement( .RIGHT, *e2 );
-	print( "Debugger\n" );
+	print_expression_tree( cast(*Expression_Node)e134 );
 }
 
 
