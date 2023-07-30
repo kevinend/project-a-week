@@ -199,6 +199,12 @@ span :: ( values: [] int, span: int ) -> ( k_span: [..] int ) {
 
 main :: () {
 
+	// that's awesome, just like most modern languages, another benefit over the C way
+	// they should have retro'd that into the language proper
+	if "Kevin" == "Kevin" {
+		print( "Would be cool is string comparisons just worked\n" );
+	}
+
 	one_span := New([5]int);
 	print( "%\n", type_of(one_span) );
 

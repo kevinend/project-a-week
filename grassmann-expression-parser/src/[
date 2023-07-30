@@ -98,6 +98,8 @@
     Applying the formula from above gives you:
     	Bit-Index = (Sum/Grade)-1 = (5/2)-1 = 1
     Which is the correct index that needs set once you offset into the Grade-2 basis elements section.
+
+
 */
 
 #scope_export
@@ -722,53 +724,33 @@ generate_k_cospan :: ( m_element: *K_Vector_Node, k_span: [..] *K_Vector_Node ) 
 	return k_cospan;
 }
 
+// result of simplify could be a binary operator node that is a sum or a k-vector so return an expression node
+
 simplify :: ( node: *Expression_Node ) -> ( result: *Expression_Node ) {
 
-	// This procedure can be called on any node in an expression tree.
-	// The reason it can't always return a k-vector is that sums of k-vectors of different grades are not defined.
-
 	result: *Expression_Node;
-	if node.kind == Node_Kind.K_Vector {	
-		result = clone_node( node );
-	}
-	else
-	if node.kind == Node_Kind.Unary_Operator {
-		print( "We don't handle unary complements yet!\n" );
+	if node.kind != Node_Kind.Binary_Operator {	
 		result = clone_node( node );
 	}
 	else {
 		binary_operator_node := cast(*Binary_Operator_Node)node;
-		binary_operator_node.left\_operand = simplify( binary_operator_node.left\_operand );
-		binary_operator_node.right_operand = simplify( binary_operator_node.right_operand );
+		binary_operator_node.left\_operand = cast(*Expression_Node)simplify( binary_operator_node.left\_operand );
+		binary_operator_node.right_operand = cast(*Expression_Node)simplify( binary_operator_node.right_operand );
 
-		if binary_operator_node.left\_operand.kind == Node_Kind.K_Vector && binary_operator_node.right_operand.kind == Node_Kind.K_Vector {
+		if binary_operator_node.operation == #char "^" {		
 			left  := cast(*K_Vector_Node)binary_operator_node.left\_operand;
 			right := cast(*K_Vector_Node)binary_operator_node.right_operand;
-
-			operation := binary_operator_node.operation;
-			if operation == #char "^" {
-				result = cast(*Expression_Node)exterior_product( left, right );
-			}
-			else
-			if operation == #char "R" {
-				result = cast(*Expression_Node)regressive_product( left, right );
-			}
-			else 
-			if operation == #char "+" || operation == #char "-" {
-				sum := clone_k_vector_node( left );
-				if left.grade == right.grade {
-					if operation == #char "-" { right.coefficient *= -1; } // part of expand could be converting differences into sums
-					sum.coefficient += right.coefficient;
-					result = cast(*Expression_Node)sum;
-				}
-				else {
-					// sum is of two k-vectors of different grade, can't sum them, just clone the node
-					result = clone_node( node );
-				}
-			}
+			result = cast(*Expression_Node)exterior_product( left, right );	
+		}
+		else 
+		if binary_operator_node.operation == #char "R" {
+			// TODO: do you want to add the regressive product to this???
+			print( "During simplify ran into a regressive product\n" );
+			result = clone_node( node );
 		}
 		else {
-			// one node is a sum and we can't simplify it further, just clone the node
+			// sums or differences, just return
+			print( "During simplify ran into a sum or difference\n" );
 			result = clone_node( node );
 		}
 	}
@@ -993,9 +975,9 @@ exterior_product :: ( lvalue: K_Vector_Node, rvalue: K_Vector_Node ) -> ( result
 		return result;
 }
 
-regressive_product :: ( lvalue: *K_Vector_Node, rvalue: *K_Vector_Node ) -> ( result: *K_Vector_Node ) {
+regressive_product :: ( lvalue: K_Vector_Node, rvalue: K_Vector_Node ) -> ( result: K_Vector_Node ) {
 
-	result := New(K_Vector_Node);
+	result: K_Vector_Node;
 	result.kind = Node_Kind.K_Vector;
 
 	// The way this is currently written we always expand the RIGHT operand in a regressive product
@@ -1043,7 +1025,7 @@ regressive_product :: ( lvalue: *K_Vector_Node, rvalue: *K_Vector_Node ) -> ( re
 // if you can resolve the sum, go ahead, if you can't then you can't, 
 // or difference, then you can flatten and remove sums if need be
 // 
-eval :: ( operators: [] u8, elements: [] K_Vector_Node ) -> ( k_vectors: [..] K_Vector_Node ) {
+eval2 :: ( operators: [] u8, elements: [] K_Vector_Node ) -> ( k_vectors: [..] K_Vector_Node ) {
 
 		bubble_sort :: ( k_vectors: *[] K_Vector_Node ) {
 
@@ -1122,7 +1104,7 @@ eval :: ( operators: [] u8, elements: [] K_Vector_Node ) -> ( k_vectors: [..] K_
 		}
 		else
 		if op == #char "R" {
-			lvalue = regressive_product( *lvalue, *rvalue );
+			lvalue = regressive_product( lvalue, rvalue );
 		}
 		else
 		if op == #char "+" || op == #char "-" {
@@ -1245,9 +1227,12 @@ test :: (
 		print_expression_tree( expression_tree_post_common_factor_theorem );
 	}
 
+	// THE FOLLOWING FLATTEN AND EVAL ARE RUNNING OVER THE TREE 'POST-DISTRIBUTION' NOT AFTER THE CFT
+	// This is intentional for now until I can test out the CFT code
+
 	operators, elements := flatten( expression_tree_post_common_factor_theorem );
 
-	results := eval( operators, elements );
+	results := eval2( operators, elements );
 
 	// print_simplified_expression()
 	for result: results {
@@ -1264,7 +1249,6 @@ test :: (
 
 main :: () {
 
-// THIS SECTION IS COMPLEMENT TESTING!
 /*
 {
 	set_dimension( 3 );
@@ -1462,6 +1446,7 @@ main :: () {
 }
 
 // THIS IS THE ORIGINAL TESTING OF THE TOP-LEVEL FUNCTIONS
+/*
 	test( dimension = 5, basis = string.["e1","e2","e3","e4","e5"], expression = "(e1^e2^e3)+(e2^e3^e4)+(e1^e4^e5)" );
 
 	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "3" );
@@ -1500,6 +1485,7 @@ main :: () {
 	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "e1^e2+e1" );
 	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "e1^(e1+e2)" ); 
 	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "(e1+e3)^(e1+e2)" ); 
+*/
 
 	return;
 }
