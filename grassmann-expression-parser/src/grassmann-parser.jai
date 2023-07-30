@@ -698,6 +698,16 @@ anticommutative_coefficient :: ( lvalue: *K_Vector_Node, rvalue: *K_Vector_Node 
 	// The current implementation forces an ordering of 1-elements such that the exterior product of (e2^e1)^e3
 	// will automatically be reordered to the positive (scalar factor is positive) product e1^e2^e3.
 
+	// Algorithm:
+	// Take the exterior product between the elements and handle the anticommutativity property of the grassmann product.
+	// For every bit (basis one element) in the LEFT argument
+	//	Start at right-most bit in the LEFT arg
+	//  Find it's place in the RIGHT arg and set that bit.
+	//	Anytime you cross over a bit in the RIGHT that is set, then you have swapped the elements.
+	// Rinse and repeat for every other bit in the LEFT.
+	//
+	// If after completing this process we have swapped an odd number of times then we negate the final product.
+
 	temp: int = rvalue.basis_components;
 	num_swaps: int = 0;
 	for < i: dimension-1..0 {
@@ -947,10 +957,6 @@ flatten :: ( subtree: *Expression_Node ) -> ( operators: [..] u8, elements: [..]
 	return operators, elements;
 }
 
-// THIS IS RETURNING A POINTER TO A K-ELEMENT BECAUSE OF SIMPLIFY, we may not want to do this for eval!!!
-// or do we want simplify to return the list then flatten is to take the products and sort them or something
-// maybe we replace eval then we just traverse the tree and if the operation is a sum then we add it to the list or something
-// i am not exactly sure what we want to do here yet
 exterior_product :: ( lvalue: *K_Vector_Node, rvalue: *K_Vector_Node ) -> ( result: *K_Vector_Node ) {
 
 	// assume the result is zero, change it if it isn't the case
@@ -966,41 +972,13 @@ exterior_product :: ( lvalue: *K_Vector_Node, rvalue: *K_Vector_Node ) -> ( resu
 		result.coefficient 	    = lvalue.coefficient * rvalue.coefficient;	
 	}
 	else
-	if (lvalue.basis_components & rvalue.basis_components) == 0 { // no one elements in common implies sum of grades is less than or equal to N
-		// Take the exterior product between the elements and handle the anticommutativity property of the grassmann product.
-		// For every bit (basis one element) in the LEFT argument
-		//	Start at right-most bit in the LEFT arg
-		//  Find it's place in the RIGHT arg and set that bit.
-		//	Anytime you cross over a bit in the RIGHT that is set, then you have swapped the elements.
-		// Rinse and repeat for every other bit in the LEFT.
-		//
-		// If after completing this process we have swapped an odd number of times then we negate the final product.
+	if (lvalue.basis_components & rvalue.basis_components) == 0 { // no one elements in common; implies sum of grades is less than or equal to N
+		
+		result.grade 			= lvalue.grade + rvalue.grade;
+		result.coefficient  	= lvalue.coefficient * rvalue.coefficient;
+		result.basis_components = lvalue.basis_components | rvalue.basis_components;
 
-		result.grade 		= lvalue.grade + rvalue.grade;
-		result.coefficient  = lvalue.coefficient * rvalue.coefficient;
-
-		result.basis_components = rvalue.basis_components;
-		num_swaps: int = 0;
-		for < i: dimension-1..0 {
-			// Start from the rightmost bit in the left argument and determine which bits are set
-			if lvalue.basis_components & (1 << i) {
-				// Bit in the left argument is set, iterate from the leftmost bit in the right argument
-				// and everytime the a bit is set increment the swap counter.
-				// When we get to the location of the bit from the left in the location on the right, set the bit in the result, stop the 'swap' loop and start over with any other bits from the left.
-				for j: 0..dimension-1 {
-					if j == i {
-						result.basis_components |= (1 << j);
-						break;
-					}
-					else
-					if result.basis_components & (1 << j) {
-						num_swaps += 1;	
-					}
-				}
-			}
-		}
-
-		if num_swaps % 2 != 0 { result.coefficient *= -1; }	
+		result.coefficient *= anticommutative_coefficient( lvalue, rvalue );
 	}
 
 	return result;
