@@ -16,10 +16,6 @@
 		exterior-term   ::= <exterior-factor> [("^","R") <exterior-factor>]...
 		exterior-factor ::= ["-"] ( <basis-one-element> | <number> |  | "(" <expression> ")" )
 
-	At the end of the week I did not make it as far as I hoped on this, the way she goes.
-	The code compiles and runs without errors for the examples in main but there is a lot more functionality
-	I intend to add to this one. Some of that functionality is listed below.
-
 	NOTE:
 	  Multiplication of basis elements by scalars is a tad clumsy.
 	  You must specify multiplication using the exterior product. 3^e1 and not 3e1.
@@ -29,23 +25,6 @@
 
 	  If your basis is not e1,e2,e3..eN then you could handle this differently but I don't want to restrict that
 	  at this time so we are left with explicit exterior products.
-
-	TODO:
-	-- SORT THE LINEAR LIST AND DO SUMS THAT WAY INSTEAD OF ADDING UP
-	--The way we encode the basis components currently is going to generate a bunch of incorrect signs
-	  If we wedge e1^e3 then this is interpreted as e1^e3 but we need e3^e1 to be -e1^e3 if that is the order
-	  of the call, it is too hot out here to even think, heading back inside
-	--That print failed us in that one case and I'm not sure what went wrong on the last test case
-	--Generate the span and cospans for elements (this would be super useful for expanding products)
-	--Complement (left and right)
-	--'Expand' functionality so that we can take the binary operator and return a new node that it replaces it, like two vectors becomes a bivector
-	   Turn expressions of form e1^(e1+e2) into e1^e1 + e1^e2	
-	--How do you free memory allocated to the string or string builder types built into the language?
-
-	-- could do the flat list as well
-	   e1 e1 e1 e2, so you sort then you sum
-	   e1
-	   e1, when it doesn't look like you, you add it to the list then you determine the next index, could do that as well
 */
 
 /*
@@ -100,6 +79,19 @@
     Which is the correct index that needs set once you offset into the Grade-2 basis elements section.
 */
 
+/*
+	TODO:
+	--Complement, need LC and RC that proceed terms, needs added to the distribution since LC(e1+e2) == LC(e1) + LC(e2)
+	--Tokenizer for the front-end (required to do the symbol lookup)
+	--Symbol table so you can stash values, say you have a point P = e0 + e1 + e2, want to store that for reuse (then you have an interpreter effectively)
+	--DeMorgan's Law, I ALWAYS forget this and it's impossible to remember
+	--I'd like to be able to run simplify at the root of the tree (be left just with sums [convert differences to sums)
+	--Return results as a string and have the tests pass or fail based on the output, a simple string compare
+	--Less important but a stepwise expand, allow the user to click through and generate a string of the current state to see
+	  how the process is working
+	--Convert 'k-vector' into 'k-element' since we could have point spaces
+*/
+
 #scope_export
 
 // globals:
@@ -111,8 +103,8 @@ test_case: int = 0;
 // data structures:
 Node_Kind :: enum {
 	K_Vector;
-	Unary_Operator;  // complement (lcomp, rcomp)
-	Binary_Operator; // exterior, regressive, interior
+	Complement;  	 // left and right complements
+	Binary_Operator; // exterior, regressive, interior, sum, difference
 }
 
 Expression_Node :: struct {
@@ -129,13 +121,18 @@ K_Vector_Node :: struct {
 	basis_components: s64; // bit field, we won't hit dimension 64 so I think we are okay here for now
 }
 
-Unary_Operator_Node :: struct {
+Complement_Variant :: enum {
+	 LEFT;
+	 RIGHT;
+}
+
+Complement_Node :: struct {
 
 	// left and right complement
 	using _instance: Expression_Node;
 
-	operation: string;
-	operand:   *Expression_Node;
+	variant:  Complement_Variant;
+	operand: *Expression_Node;
 }
 
 Binary_Operator_Node :: struct {
@@ -147,12 +144,6 @@ Binary_Operator_Node :: struct {
 	left_\operand: *Expression_Node;
 	right_operand: *Expression_Node;
 }
-
-Complement_Variant :: enum {
-	 LEFT;
-	 RIGHT;
-}
-
 
 // procedures:
 init_dimension :: ( N: int ) {
@@ -318,7 +309,6 @@ parse_exterior_term :: ( expression: string ) -> ( node: *Expression_Node, curso
 	}
 
 	return factor, cursor;
-
 }
 
 parse_exterior_factor :: ( expression: string ) -> ( node: *Expression_Node, cursor: string ) {
@@ -479,12 +469,12 @@ clone_k_vector_node :: ( k_vector_node: *K_Vector_Node ) -> ( cloned_node: *K_Ve
 	return cloned_node;
 }
 
-clone_unary_operator_node :: ( unary_operator_node: *Unary_Operator_Node ) -> ( cloned_node: *Unary_Operator_Node ) {
+clone_complement_node :: ( complement_node: *Complement_Node ) -> ( cloned_node: *Complement_Node ) {
 
-	cloned_node := New(Unary_Operator_Node);
-	cloned_node.kind 	  = Node_Kind.Unary_Operator;
-	cloned_node.operation = unary_operator_node.operation;
-	cloned_node.operand   = clone_node( unary_operator_node.operand );
+	cloned_node 		 := New(Complement_Node);
+	cloned_node.kind 	  = Node_Kind.Complement;
+	cloned_node.variant   = complement_node.variant;
+	cloned_node.operand   = clone_node( complement_node.operand );
 
 	return cloned_node;
 }
@@ -506,8 +496,8 @@ clone_node :: ( node: *Expression_Node ) -> ( cloned_node: *Expression_Node ) {
 		return cast(*Expression_Node)clone_k_vector_node( cast(*K_Vector_Node)node );
 	}
 	else
-	if node.kind == Node_Kind.Unary_Operator {
-		return cast(*Expression_Node)clone_unary_operator_node( cast(*Unary_Operator_Node)node );
+	if node.kind == Node_Kind.Complement {
+		return cast(*Expression_Node)clone_complement_node( cast(*Complement_Node)node );
 	}
 	else
 	if node.kind == Node_Kind.Binary_Operator {
@@ -732,6 +722,8 @@ anticommutative_coefficient :: ( lvalue: *K_Vector_Node, rvalue: *K_Vector_Node 
 generate_k_cospan :: ( m_element: *K_Vector_Node, k_span: [..] *K_Vector_Node ) -> ( k_cospan: [..] *K_Vector_Node ) {
 
 	co_m_element :: ( m_element: *K_Vector_Node, k_element: *K_Vector_Node ) -> ( m_k_element: *K_Vector_Node ) {
+
+		// similar to the 'complement' however this is with respect to an m-element instead of the basis n-element.
 		
 		m_k_element := New(K_Vector_Node);
 		m_k_element.kind  		= Node_Kind.K_Vector;
@@ -763,8 +755,11 @@ simplify :: ( node: *Expression_Node ) -> ( result: *Expression_Node ) {
 		result = clone_node( node );
 	}
 	else
-	if node.kind == Node_Kind.Unary_Operator {
-		print( "We don't handle unary complements yet!\n" );
+	if node.kind == Node_Kind.Complement {
+		complement_node := cast(*Complement_Node)node;
+
+		// TODO: Need to distribute the complement over sums -- LC(e1+e2) == LC(e1) + LC(e2)
+		// result = cast(*Expression_Node)complement( complement_node.variant, complement_node
 		result = clone_node( node );
 	}
 	else {
