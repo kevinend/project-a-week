@@ -11,10 +11,12 @@
 	BNF for Grassmann expressions:
 	 *The character R represents the 'Regressive' product. Don't want to get into unicode characters quite yet.
 	  Eventually we will render those as logical and (U+2227) and or (U+2228) in unicode.
+	 *The strings "LC" and "RC" represent the LEFT and RIGHT complement operations. 
+	  Eventually will render those with the overline (U+203E) and underline (U+005F)
 
 		expression 		::= <exterior-term>   [("+","-") <exterior-term]...
 		exterior-term   ::= <exterior-factor> [("^","R") <exterior-factor>]...
-		exterior-factor ::= ["-"] ( <basis-one-element> | <number> |  | "(" <expression> ")" )
+		exterior-factor ::= ["-"] ["LC","RC"] ( <basis-one-element> | <number> |  | "(" <expression> ")" )
 
 	NOTE:
 	  Multiplication of basis elements by scalars is a tad clumsy.
@@ -81,23 +83,26 @@
 
 /*
 	TODO:
-	--Complement, need LC and RC that proceed terms, needs added to the distribution since LC(e1+e2) == LC(e1) + LC(e2)
+	xxx--Complement, need LC and RC that preceed terms, needs added to the distribution since LC(e1+e2) == LC(e1) + LC(e2)
+	--I'd like to be able to run simplify at the root of the tree (be left just with sums [convert differences to sums)
 	--Tokenizer for the front-end (required to do the symbol lookup)
 	--Symbol table so you can stash values, say you have a point P = e0 + e1 + e2, want to store that for reuse (then you have an interpreter effectively)
 	--DeMorgan's Law, I ALWAYS forget this and it's impossible to remember
-	--I'd like to be able to run simplify at the root of the tree (be left just with sums [convert differences to sums)
-	--Return results as a string and have the tests pass or fail based on the output, a simple string compare
+		--Return results as a string and have the tests pass or fail based on the output, a simple string compare
 	--Less important but a stepwise expand, allow the user to click through and generate a string of the current state to see
 	  how the process is working
 	--Convert 'k-vector' into 'k-element' since we could have point spaces
+	--Negation doesn't work like i think it does, it only negates k-vectors and not sums so something like -(e1+e2) doesn't work, just haven't tested it yet which is why i don't know about it
+	  Need to create the Unary_Operator which is either complements or negation
 */
 
 #scope_export
 
 // globals:
 dimension: int = 0;
-basis_one_elements: [..] string;
+basis_one_elements: 	[..] string;
 n_element: int;
+
 test_case: int = 0;
 
 // data structures:
@@ -146,39 +151,8 @@ Binary_Operator_Node :: struct {
 }
 
 // procedures:
-init_dimension :: ( N: int ) {
 
-	// implmentation uses a single 64-bit integer to represent basis-one-elements.
-	// dimension must be a positive integer and less than 64
-
-	assert( N > 0  );
-	assert( N < 64 ); 
-
-	dimension = N;
-
-	for i: 0..N-1 {
-		n_element |= (1 << i);
-	}
-
-	return;
-}
-
-init_basis_one_elements :: ( one_element_symbols: [] string ) {
-
-	// TODO: check that there aren't duplicates passed in here by the caller
-
-	assert( one_element_symbols.count == dimension );
-
-	if basis_one_elements.count > 0 { array_reset( *basis_one_elements ); }
-
-	// copy the symbols over into our global symbol/basis elements table
-	for one_element_symbol: one_element_symbols {
-		array_add(*basis_one_elements, one_element_symbol );
-	}
-
-	return;
-}
-
+// parsing:
 skip_spaces :: ( s: string ) -> ( cursor: string ) {
 	cursor := s;
 	while cursor && (cursor[0] == #char " " || cursor[0] == 9) { // horizontal tab
@@ -186,38 +160,37 @@ skip_spaces :: ( s: string ) -> ( cursor: string ) {
 	}
 	return cursor;
 }
+string_compare :: ( s1: string, s2: string, n: int ) -> ( result: int, success: bool ) {
+
+	// Invalid return values:
+	// if the number of characters specified for comparison is larger than the number of characters in each string then return negative one and false
+
+	// Valid return values:
+	// zero means the strings are equal up to n bytes
+	// negative one and a result of success means the strings are unequal and the character in the first string has a lesser value than the character in the second
+	// positive one and a result of success means the strings are unequal and the character in the second string has a lesser value than the character in the first
+
+	if s1.count < n || s2.count < n {
+		return -1, false;
+	}
+
+	i: int = 0;
+	while i < n && s1[i] == s2[i] {
+		i += 1;
+	}
+
+	for i: 0..n-1 {
+		if s1[i] == s2[i] { continue; }
+		else
+		if s1[i] < s2[i] { return -1, true; }
+		else
+		if s2[i] < s1[i] { return 1, true; }
+	}
+
+	return 0, true;
+}
 
 is_basis_one_element :: ( expression: string ) -> ( found_basis_element: bool, basis_element_index: s64 ) {
-
-	string_compare :: ( s1: string, s2: string, n: int ) -> ( result: int, success: bool ) {
-
-		// Invalid return values:
-		// if the number of characters specified for comparison is larger than the number of characters in each string then return negative one and false
-
-		// Valid return values:
-		// zero means the strings are equal up to n bytes
-		// negative one and a result of success means the strings are unequal and the character in the first string has a lesser value than the character in the second
-		// positive one and a result of success means the strings are unequal and the character in the second string has a lesser value than the character in the first
-
-		if s1.count < n || s2.count < n {
-			return -1, false;
-		}
-
-		i: int = 0;
-		while i < n && s1[i] == s2[i] {
-			i += 1;
-		}
-
-		for i: 0..n-1 {
-			if s1[i] == s2[i] { continue; }
-			else
-			if s1[i] < s2[i] { return -1, true; }
-			else
-			if s2[i] < s1[i] { return 1, true; }
-		}
-
-		return 0, true;
-	}
 
 	found_basis_element: bool = false;
 	basis_element_index: s64  = -1;
@@ -322,6 +295,18 @@ parse_exterior_factor :: ( expression: string ) -> ( node: *Expression_Node, cur
 		advance( *cursor, 1 );
 	}
 
+	take_left\_complement: bool = false;
+	take_right_complement: bool = false;
+	if string_compare( cursor, "LC", 2 ) == 0 {
+		take_left_complement = true;
+		advance( *cursor, 2 );
+	}
+	else
+	if string_compare( cursor, "RC", 2 ) == 0 {
+		take_right_complement = true;
+		advance( *cursor, 2 );
+	}
+ 
 	is_basis_one_element, basis_element_index := is_basis_one_element( cursor );
 
 	if is_basis_one_element {
@@ -361,7 +346,71 @@ parse_exterior_factor :: ( expression: string ) -> ( node: *Expression_Node, cur
 		exit( -2 );
 	}
 
+	// TODO: if this works move the negation down here as well, you need to apply it as well
+	// We might want to move the negation down here as well honestly
+	// since -(e1+e2) is really -e1 + -e2 but we don't handle that case right now
+	if take_left_complement {
+		complement_node := New(Complement_Node);
+		complement_node.kind = Node_Kind.Complement;
+		complement_node.variant = Complement_Variant.LEFT;
+		complement_node.operand = node;
+
+		node = cast(*Expression_Node)complement_node;
+	}
+	else
+	if take_right_complement {
+		complement_node := New(Complement_Node);
+		complement_node.kind = Node_Kind.Complement;
+		complement_node.variant = Complement_Variant.RIGHT;
+		complement_node.operand = node;
+
+		node = cast(*Expression_Node)complement_node;
+	}
+
 	return node, cursor;
+}
+
+// expression-tree:
+
+n_choose_k :: (n: int, k: int) -> (value: int) {
+	// example: n_choose_k(4,2) == (4*3)/(2*1) == 6
+    if k == 0 return 1;
+    return (n * n_choose_k(n-1, k-1)) / k;
+}
+
+init_dimension :: ( N: int ) {
+
+	// Implmentation uses a single 64-bit integer to represent basis-one-elements.
+	// Dimension must be a positive integer and less than 64.
+
+	assert( N > 0  );
+	assert( N < 64 ); 
+
+	// Set the dimension
+	dimension = N;
+
+	// Build the n_element for the declared space
+	for i: 0..N-1 {
+		n_element |= (1 << i);
+	}
+		
+	return;
+}
+
+init_basis_one_elements :: ( one_element_symbols: [] string ) {
+
+	// TODO: check that there aren't duplicates passed in here by the caller
+
+	assert( one_element_symbols.count == dimension );
+
+	if basis_one_elements.count > 0 { array_reset( *basis_one_elements ); }
+
+	// copy the symbols over into our global symbol/basis elements table
+	for one_element_symbol: one_element_symbols {
+		array_add(*basis_one_elements, one_element_symbol );
+	}
+
+	return;
 }
 
 k_vector_to_string :: ( k_vector: *K_Vector_Node ) -> ( s: string ) {
@@ -406,6 +455,16 @@ print_expression_tree :: ( node: *Expression_Node, indent: int = 0 ) {
 		else {
 			print( "%1\n", k_vector.coefficient );
 		}
+	}
+	else 
+	if node.kind == Node_Kind.Complement { // this might need flipped back to unary operator
+		
+		complement := cast(*Complement_Node)node;
+		if complement.variant == {
+			case .LEFT;  { print( "LC\n" ); }
+			case .RIGHT; { print( "RC\n" ); }
+		}
+		print_expression_tree( complement.operand, indent + 2 );
 	}
 	else 
 	if node.kind == Node_Kind.Binary_Operator {
@@ -457,6 +516,7 @@ print_expression_from_expression_tree :: ( node: *Expression_Node ) {
 
 	return;
 }
+
 
 clone_k_vector_node :: ( k_vector_node: *K_Vector_Node ) -> ( cloned_node: *K_Vector_Node ) {
 
@@ -526,9 +586,46 @@ distribute_grassmann_products :: ( node: *Expression_Node ) -> ( tree: *Expressi
 	// the 'expansion' or 'simplification' stages work on their own trees to ease debugging.
 	 
 	subtree: *Expression_Node;
-	if node.kind != Node_Kind.Binary_Operator {
+	if node.kind == Node_Kind.K_Vector {
 		subtree = clone_node( node );	
 	}
+	else 
+	if node.kind == Node_Kind.Complement {
+	 	// might do the boolean thing again to reduce degree of nesting, this is wild
+		complement_node := cast(*Complement_Node)node;
+		if complement_node.operand.kind == Node_Kind.Binary_Operator {
+			binary_operator_node := cast(*Binary_Operator_Node)complement_node.operand;
+			if binary_operator_node.operation == #char "+" || binary_operator_node.operation == #char "-" {
+				// distribute the complement over each term in the sum or difference
+				new_binary_operator_node := New(Binary_Operator_Node);
+				
+				new_left\_node := New(Complement_Node); 
+				new_right_node := New(Complement_Node);
+
+				new_left_node.kind 	  = Node_Kind.Complement;
+				new_left_node.variant = complement_node.variant;
+				new_left_node.operand = clone_node( binary_operator_node.left_operand );
+
+				new_right_node.kind	   = Node_Kind.Complement;
+				new_right_node.variant = complement_node.variant;
+				new_right_node.operand = clone_node( binary_operator_node.right_operand );
+
+
+				new_binary_operator_node.kind      = Node_Kind.Binary_Operator;
+				new_binary_operator_node.operation = binary_operator_node.operation;
+				new_binary_operator_node.left\_operand = distribute_grassmann_products( cast(*Expression_Node)new_left\_node );
+				new_binary_operator_node.right_operand = distribute_grassmann_products( cast(*Expression_Node)new_right_node );
+
+				subtree = cast(*Expression_Node)new_binary_operator_node;
+			}
+			else {
+				subtree = clone_node( node );
+			}
+		}
+		else {
+			subtree = clone_node( node );
+		}
+	}	
 	else {
 		// Determine whether we need to distribute the grassmann products over any sums or differences.
 		// The boolean values are introduced to reduce the level of nesting that happens if you don't 
@@ -564,7 +661,7 @@ distribute_grassmann_products :: ( node: *Expression_Node ) -> ( tree: *Expressi
 
 			new_binary_operator_node := New(Binary_Operator_Node);
 
-			new_\left_node := New(Binary_Operator_Node);
+			new_left\_node := New(Binary_Operator_Node);
 			new_right_node := New(Binary_Operator_Node);
 
 			new_left_node.kind           = Node_Kind.Binary_Operator;
@@ -757,10 +854,8 @@ simplify :: ( node: *Expression_Node ) -> ( result: *Expression_Node ) {
 	else
 	if node.kind == Node_Kind.Complement {
 		complement_node := cast(*Complement_Node)node;
-
-		// TODO: Need to distribute the complement over sums -- LC(e1+e2) == LC(e1) + LC(e2)
-		// result = cast(*Expression_Node)complement( complement_node.variant, complement_node
-		result = clone_node( node );
+		arg   := cast(*K_Vector_Node)complement_node.operand;
+		result = cast(*Expression_Node)complement( complement_node.variant, arg );
 	}
 	else {
 		binary_operator_node := cast(*Binary_Operator_Node)node;
@@ -781,14 +876,14 @@ simplify :: ( node: *Expression_Node ) -> ( result: *Expression_Node ) {
 			}
 			else 
 			if operation == #char "+" || operation == #char "-" {
-				sum := clone_k_vector_node( left );
-				if left.grade == right.grade {
+				if left.grade == right.grade && left.basis_components == right.basis_components {
+					sum := clone_k_vector_node( left );
 					if operation == #char "-" { right.coefficient *= -1; } // part of expand could be converting differences into sums
 					sum.coefficient += right.coefficient;
 					result = cast(*Expression_Node)sum;
 				}
 				else {
-					// sum is of two k-vectors of different grade, can't sum them, just clone the node
+					// sum is of two k-vectors of different grade; can't simplify.
 					result = clone_node( node );
 				}
 			}
@@ -910,46 +1005,29 @@ common_factor_theorem :: ( node: *Expression_Node ) -> ( tree: *Expression_Node 
 
 	return subtree;
 }
+
+complement :: ( variant: Complement_Variant, k_vector: *K_Vector_Node ) -> ( n_k_vector: *K_Vector_Node ) {
 	
-flatten :: ( subtree: *Expression_Node ) -> ( operators: [..] u8, elements: [..] K_Vector_Node ) {
-	
-	// In-order traversal of the distributed expression tree.
-	// Once we have the flattened list of operators (sums/differences/grassmann products) and elements (1-vector/basis 1 elements)
-	// we need to evaluate the possible cases of our tree.
-	//
-	
-	flatten_helper :: ( node: *Expression_Node, operators: *[..] u8, elements: *[..] K_Vector_Node ) {
+	n_k_vector := New(K_Vector_Node);
+	n_k_vector.kind             =  Node_Kind.K_Vector;
+	n_k_vector.grade 	    	=  dimension - k_vector.grade;
+	n_k_vector.coefficient 	 	=  k_vector.coefficient;
+	n_k_vector.basis_components =  k_vector.basis_components ^ n_element; // XOR
 
-		success: bool;
-		
-		if node.kind == Node_Kind.K_Vector {
-			k_vector_node := cast(*K_Vector_Node)node;
-			
-			k_vector: K_Vector_Node;
-			k_vector.kind 		 	  = Node_Kind.K_Vector;
-			k_vector.coefficient 	  = k_vector_node.coefficient;
-			k_vector.grade       	  = k_vector_node.grade;
-			k_vector.basis_components = k_vector_node.basis_components;
+	// Need to determine whether the (n-k)-element should be negated.
+	// The procedure below effectively takes the exterior product between the args and determines the number
+	// of swaps required to build the final N element from the product of the (n-k)-element or the k-element
+	// or vice versa depending on whether this is a left or right complement.
 
-			array_add( elements, k_vector );
-		}
-		else
-		if node.kind == Node_Kind.Binary_Operator {
-			binary_operator_node := cast(*Binary_Operator_Node)node;
-			flatten_helper( binary_operator_node.left\_operand, operators, elements );
-
-			array_add( operators, binary_operator_node.operation );
-
-			flatten_helper( binary_operator_node.right_operand, operators, elements );
-		}
+	if variant == Complement_Variant.LEFT {
+		n_k_vector.coefficient *= anticommutative_coefficient( n_k_vector, k_vector );
+	} 
+	else
+	if variant == Complement_Variant.RIGHT {
+		n_k_vector.coefficient *= anticommutative_coefficient( k_vector, n_k_vector );
 	}
 
-	operators: [..] u8;
-	elements:  [..] K_Vector_Node;
-
-	flatten_helper( subtree, *operators, *elements );
-
-	return operators, elements;
+	return n_k_vector;
 }
 
 exterior_product :: ( lvalue: *K_Vector_Node, rvalue: *K_Vector_Node ) -> ( result: *K_Vector_Node ) {
@@ -1005,6 +1083,198 @@ regressive_product :: ( lvalue: *K_Vector_Node, rvalue: *K_Vector_Node ) -> ( re
 	return result;
 }
 
+// TODO: We can replace eval with an eval that does our steps with flatten2 and sort
+//       Just sucks that we have to simplify to use the common factor theorem otherwise i like
+//       The way I had the old eval, it just isn't the best way for now
+flatten2 :: ( subtree: *Expression_Node ) -> ( elements: [..] K_Vector_Node ) {
+
+	// This procedure returns a flat array of k-elements.
+	// At this point simplify has executed from the root and we are either left with a single k-element
+	// or a sum of k-elements.
+
+	helper :: ( node: *Expression_Node, elements: *[..] K_Vector_Node ) {
+
+		if node.kind == Node_Kind.K_Vector {
+			k_vector_node := cast(*K_Vector_Node)node;
+
+			k_vector: K_Vector_Node;
+			k_vector.kind 		 	  = Node_Kind.K_Vector;
+			k_vector.coefficient 	  = k_vector_node.coefficient;
+			k_vector.grade       	  = k_vector_node.grade;
+			k_vector.basis_components = k_vector_node.basis_components;
+
+			array_add( elements, k_vector );
+		}
+		else
+		if node.kind == Node_Kind.Binary_Operator {
+			binary_operator_node := cast(*Binary_Operator_Node)node;
+			helper( binary_operator_node.left\_operand, elements );
+			helper( binary_operator_node.right_operand, elements );
+		}
+
+		return;
+	}
+
+	elements: [..] K_Vector_Node;
+	helper( subtree, *elements );
+	
+	return elements;
+}
+
+sort :: ( elements: *[] K_Vector_Node ) {
+
+	// bubble sort
+
+	swapped: bool = false;
+	for _: 0..elements.count-1 {
+		for i: 0..elements.count-2 {
+			if (<<elements)[i+1].grade <= (<<elements)[i].grade &&
+			   (<<elements)[i+1].basis_components < (<<elements)[i].basis_components {
+					
+					temp := (<<elements)[i];
+					(<<elements)[i]   = (<<elements)[i+1];
+					(<<elements)[i+1] = temp;
+
+					swapped = true;
+			}
+		}
+		if !swapped { return; }
+		swapped = false;
+	}
+
+	return;
+}
+
+elements_to_expression :: ( elements: [] K_Vector_Node ) -> ( expression: string ) {
+
+	k_element_to_string ::  ( k_element: K_Vector_Node ) -> ( result: string ) {
+
+		builder: String_Builder;
+		num_processed_basis_one_elements: int = 0;
+	
+		// need a 'float-to-string' to put the coefficient out front or a call to libc sprintf
+		// punting on the coefficient for now
+		for i: 0..dimension-1 {
+			if k_element.basis_components & (1 << i) {
+				append( *builder, basis_one_elements[i] );
+				if num_processed_basis_one_elements < k_element.grade-1 {
+					// in an expression like e1^e2 the number of exterior products is the grade-1
+					append( *builder, "^" );
+				}
+
+				num_processed_basis_one_elements += 1;
+			}
+		}
+		
+		// TODO: Memory Leak! How do you free the builder memory???
+		s: string = builder_to_string( *builder );
+		
+		return s;
+	}
+
+	expression_builder: String_Builder;
+	num_processed_elements: int = 0;
+	i := 0;
+	while i < elements.count-1 {
+		append( *expression_builder, k_element_to_string( elements[i] ) );
+		append( *expression_builder, "+" );
+		i += 1;
+	}
+	append( *expression_builder, k_element_to_string( elements[i] ) );
+
+	// TODO: Memory Leak! How do you free the builder mememory???
+	expression: string = builder_to_string( *expression_builder );
+
+	return expression;
+}
+
+eval2 :: ( expression: string ) -> ( result: string ) {
+
+	expression_tree: *Expression_Node;
+	expression_tree = parse_expression( expression );
+	expression_tree = distribute_grassmann_products( expression_tree );
+	expression_tree = common_factor_theorem( expression_tree );
+
+	expression_tree = simplify( expression_tree );
+	
+	elements: [..] K_Vector_Node;
+	elements = flatten2( expression_tree );
+	
+	sort( *elements );
+
+	result: string;
+	result = elements_to_expression( elements );
+
+	return result;
+}
+
+	
+flatten :: ( subtree: *Expression_Node ) -> ( operators: [..] u8, elements: [..] K_Vector_Node ) {
+	
+	// In-order traversal of the distributed expression tree.
+	// Once we have the flattened list of operators (sums/differences/grassmann products) and elements (1-vector/basis 1 elements)
+	// we need to evaluate the possible cases of our tree.
+	//
+	
+	flatten_helper :: ( node: *Expression_Node, operators: *[..] u8, elements: *[..] K_Vector_Node ) {
+
+		success: bool;
+		
+		if node.kind == Node_Kind.K_Vector {
+			k_vector_node := cast(*K_Vector_Node)node;
+			
+			k_vector: K_Vector_Node;
+			k_vector.kind 		 	  = Node_Kind.K_Vector;
+			k_vector.coefficient 	  = k_vector_node.coefficient;
+			k_vector.grade       	  = k_vector_node.grade;
+			k_vector.basis_components = k_vector_node.basis_components;
+
+			array_add( elements, k_vector );
+		}
+		else
+		if node.kind == Node_Kind.Binary_Operator {
+			binary_operator_node := cast(*Binary_Operator_Node)node;
+			flatten_helper( binary_operator_node.left\_operand, operators, elements );
+
+			array_add( operators, binary_operator_node.operation );
+
+			flatten_helper( binary_operator_node.right_operand, operators, elements );
+		}
+	}
+
+	operators: [..] u8;
+	elements:  [..] K_Vector_Node;
+
+	flatten_helper( subtree, *operators, *elements );
+
+	return operators, elements;
+}
+
+// you want a consistent e0 + e1 + e2 not e2 + e0 + e1 then sometimes it's e0 + e2 + e1
+// the tree needs copied over then sorted
+// so simplify needs to handle sums and differences up to a point
+// then we want to create a K-Vector representing a thingy and put it in there
+//  e1 e2 e3
+//  1   2  4
+// do we just add them in the order, and search through to find the final answer
+// i feel like you know that there are however many basis-k-vectors so you just have those then make the products of those
+//  [e1,e2,e3,e1e2,e1e3,e1e2,e123] then you add to those then you just filter out the ones you don't need
+// then runtime is pretty consistent for all of them
+// or you add them to a hashtable and look them up
+// or you have a grade 2 whose index is 1 2 = 3/2-1 offset+index
+// what is the offset? need a table
+// n-choose-k
+//
+// this seems a little weird to me but it might just work, you have to filter through a bunch of k-vectors though
+// can we just sort the string? not really
+//
+// THREE OPTIONS:
+//  1. Don't do shit with the tree (fastest, don't like because the order could be all over the place)
+//  2. Basis elements array (do a lookup with some quick math and offsets, add then filter then convert to a string); go this route
+//  3. Insert into an ordered list (slow as shit but pretty easy to write)
+
+
+
 // instead of flatten, we have eval that allows you to evaluate from certain points in the tree
 // so flatten traverses the entire tree but what eval should do is generate a tree that is just sums
 // then if we have sums or whatever, then you don't necessarily have to flatten the tree if you don't want to
@@ -1012,7 +1282,8 @@ regressive_product :: ( lvalue: *K_Vector_Node, rvalue: *K_Vector_Node ) -> ( re
 // i really like the idea of eval 
 // if you can resolve the sum, go ahead, if you can't then you can't, 
 // or difference, then you can flatten and remove sums if need be
-// 
+//
+
 eval :: ( operators: [] u8, elements: [] K_Vector_Node ) -> ( k_vectors: [..] K_Vector_Node ) {
 
 		bubble_sort :: ( k_vectors: *[] K_Vector_Node ) {
@@ -1123,30 +1394,6 @@ eval :: ( operators: [] u8, elements: [] K_Vector_Node ) -> ( k_vectors: [..] K_
 	return results;
 }
 
-complement :: ( variant: Complement_Variant, k_vector: *K_Vector_Node ) -> ( n_k_vector: *K_Vector_Node ) {
-	
-	n_k_vector := New(K_Vector_Node);
-	n_k_vector.kind             =  Node_Kind.K_Vector;
-	n_k_vector.grade 	    	=  dimension - k_vector.grade;
-	n_k_vector.coefficient 	 	=  k_vector.coefficient;
-	n_k_vector.basis_components =  k_vector.basis_components ^ n_element; // XOR
-
-	// Need to determine whether the (n-k)-element should be negated.
-	// The procedure below effectively takes the exterior product between the args and determines the number
-	// of swaps required to build the final N element from the product of the (n-k)-element or the k-element
-	// or vice versa depending on whether this is a left or right complement.
-
-	if variant == Complement_Variant.LEFT {
-		n_k_vector.coefficient *= anticommutative_coefficient( n_k_vector, k_vector );
-	} 
-	else
-	if variant == Complement_Variant.RIGHT {
-		n_k_vector.coefficient *= anticommutative_coefficient( k_vector, n_k_vector );
-	}
-
-	return n_k_vector;
-}
-
 test :: ( 
 	 dimension: u8
 	,basis: [] string
@@ -1199,6 +1446,16 @@ test :: (
 }
 
 main :: () {
+
+/*
+// THIS SECTION IS COMPLEMENTS BUT LIKE IN THE EARLY PHASES
+{
+
+//	test( dimension = 4, basis = string.["e1","e2","e3","e4"], expression = "RC(e1)" );	// okay it printed in the tree correctly
+//  test( dimension = 4, basis = string.["e1","e2","e3","e4"], expression = "RC(e1+(e3+e2))" );	// okay it printed in the tree correctly
+//	test( dimension = 4, basis = string.["e1","e2","e3","e4"], expression = "RC(e1) + e2" );	// okay it printed in the tree correctly
+
+}
 
 // THIS SECTION IS COMPLEMENT TESTING!
 {
@@ -1310,6 +1567,8 @@ main :: () {
 	print_expression_tree( cast(*Expression_Node)e134 );
 }
 
+*/
+
 
 // THE FOLLOWING TWO SECTIONS ARE THE GENERATE-K-SPAN and GENERATE-K-COSPAN TESTS
 
@@ -1380,6 +1639,67 @@ main :: () {
 }
 */
 
+init_dimension( N = 4 );
+init_basis_one_elements( string.["e1","e2","e3","e4"] );
+
+expression: string = "e1";
+result: string = eval2( expression );
+print( "%\n", result );
+
+expression = "e2";
+result = eval2( expression );
+print( "%\n", result );
+
+expression = "e3";
+result = eval2( expression );
+print( "%\n", result );
+
+expression = "e4";
+result = eval2( expression );
+print( "%\n", result );
+
+expression = "e1^e2";
+result = eval2( expression );
+print( "%\n", result );
+
+expression = "e1^e1";  // this is zero and not sure we represent that at all since we don't have coefficients
+result = eval2( expression );
+print( "%\n", result );
+
+expression = "e1+e2";  // this is zero and not sure we represent that at all since we don't have coefficients
+result = eval2( expression );
+print( "%\n", result );
+
+expression = "e1+e2+e3";  // this is zero and not sure we represent that at all since we don't have coefficients
+result = eval2( expression );
+print( "%\n", result );
+
+expression = "e1^(e1+e2)";  // printing 1 in there but oh well
+result = eval2( expression );
+print( "%\n", result );
+
+expression = "LC(e1)"; 
+result = eval2( expression );
+print( "%\n", result );
+
+expression = "RC(e1)"; 
+result = eval2( expression );
+print( "%\n", result );
+
+expression = "(e2^e3)R(e1^e3^e4)";  // cool it works but we still have the 'zero' problem
+result = eval2( expression );
+print( "%\n", result );
+
+
+
+
+
+
+
+
+
+
+/*
 // THE FOLLOWING SECTIONS ARE FOR TESTING THE EXPANSION OF THE COMMON FACTOR THEOREM
 {
 	// the problem is in partial eval, i need to reevaluate how i want that to work at all
@@ -1389,6 +1709,7 @@ main :: () {
 
 	test( dimension = 4, basis = string.["e1","e2","e3","e4"], expression = "(e2^e3)R(e1^e3^e4)" );	
 }
+
 
 // THIS IS THE ORIGINAL TESTING OF THE TOP-LEVEL FUNCTIONS
 	test( dimension = 5, basis = string.["e1","e2","e3","e4","e5"], expression = "(e1^e2^e3)+(e2^e3^e4)+(e1^e4^e5)" );
@@ -1429,6 +1750,8 @@ main :: () {
 	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "e1^e2+e1" );
 	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "e1^(e1+e2)" ); 
 	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "(e1+e3)^(e1+e2)" ); 
+
+*/
 
 	return;
 }
