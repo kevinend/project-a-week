@@ -199,6 +199,14 @@ span :: ( values: [] int, span: int ) -> ( k_span: [..] int ) {
 
 main :: () {
 
+	some_float: float = 3.14;
+	some_float_string: string = tprint( "%", some_float );
+	print( "some_float_string == %\n", some_float_string ); // well that worked
+
+	output_basename := "kevin";
+	output_filename := tprint("%.lib", output_basename);
+	print( "Output filename == %\n", output_filename );
+
 	// that's awesome, just like most modern languages, another benefit over the C way
 	// they should have retro'd that into the language proper
 	if "Kevin" == "Kevin" {

@@ -84,7 +84,10 @@
 /*
 	TODO:
 	xxx--Complement, need LC and RC that preceed terms, needs added to the distribution since LC(e1+e2) == LC(e1) + LC(e2)
-	--I'd like to be able to run simplify at the root of the tree (be left just with sums [convert differences to sums)
+	xxx--Replace eval with simplify and have eval call simplify at the root of the tree
+	--Negation doesn't work like i think it does, it only negates k-vectors and not sums so something like -(e1+e2) doesn't work, just haven't tested it yet which is why i don't know about it
+	  Need to create the Unary_Operator which is either complements or negation
+	--Convert differences to sums (not sure this is possible)
 	--Tokenizer for the front-end (required to do the symbol lookup)
 	--Symbol table so you can stash values, say you have a point P = e0 + e1 + e2, want to store that for reuse (then you have an interpreter effectively)
 	--DeMorgan's Law, I ALWAYS forget this and it's impossible to remember
@@ -92,9 +95,7 @@
 	--Less important but a stepwise expand, allow the user to click through and generate a string of the current state to see
 	  how the process is working
 	--Convert 'k-vector' into 'k-element' since we could have point spaces
-	--Negation doesn't work like i think it does, it only negates k-vectors and not sums so something like -(e1+e2) doesn't work, just haven't tested it yet which is why i don't know about it
-	  Need to create the Unary_Operator which is either complements or negation
-*/
+	*/
 
 #scope_export
 
@@ -412,111 +413,6 @@ init_basis_one_elements :: ( one_element_symbols: [] string ) {
 
 	return;
 }
-
-k_vector_to_string :: ( k_vector: *K_Vector_Node ) -> ( s: string ) {
-	
-	builder: String_Builder;
-	num_processed_basis_elements: u8 = 0;
-
-	// need a float to string to put the coefficient out front or a call to libc sprintf
-	// punted on this and just used print statement for the coefficient then printed the string returned by this procedure.
-	for i: 0..basis_one_elements.count-1 {
-		if k_vector.basis_components & (1 << i) {
-			append( *builder, basis_one_elements[i] );
-			if num_processed_basis_elements < k_vector.grade-1 {
-				// in expression like e1^e2 the number of exterior products is the grade minus 1
-				append( *builder, "^" );
-			}
-			num_processed_basis_elements += 1;
-		}
-	}
-
-	// MEMORY LEAK!!!
-	// no idea how to free the builder in this language!
-	s: string = builder_to_string( *builder );
-
-	return s;
-}
-
-print_expression_tree :: ( node: *Expression_Node, indent: int = 0 ) {
-
-	for i: 0..indent-1 {
-		print( " " );
-	}
-
-	if node.kind == Node_Kind.K_Vector {
-		
-		k_vector := cast(*K_Vector_Node)node;
- 
-		if k_vector.grade > 0 {
-			k_vector_as_string := k_vector_to_string( k_vector );
-			print("%1%2\n", k_vector.coefficient, k_vector_as_string );
-		}
-		else {
-			print( "%1\n", k_vector.coefficient );
-		}
-	}
-	else 
-	if node.kind == Node_Kind.Complement { // this might need flipped back to unary operator
-		
-		complement := cast(*Complement_Node)node;
-		if complement.variant == {
-			case .LEFT;  { print( "LC\n" ); }
-			case .RIGHT; { print( "RC\n" ); }
-		}
-		print_expression_tree( complement.operand, indent + 2 );
-	}
-	else 
-	if node.kind == Node_Kind.Binary_Operator {
-		binary_operator := cast(*Binary_Operator_Node)node;
-		
-		if binary_operator.operation == {
-			case #char "^"; { print( "^\n" ); }
-			case #char "R"; { print( "R\n" ); }
-			case #char "+"; { print( "+\n" ); }
-			case #char "-"; { print( "-\n" ); }
-			case; print( "Unhandled operator case in print procedure.\n" );
-		}
-
-		print_expression_tree( binary_operator.left\_operand, indent + 2 );
-		print_expression_tree( binary_operator.right_operand, indent + 2 );
-	}
-
-	return;
-}
-
-print_expression_from_expression_tree :: ( node: *Expression_Node ) {
-
-	if node.kind == Node_Kind.K_Vector {	
-		k_vector := cast(*K_Vector_Node)node;
- 
-		if k_vector.grade > 0 {
-			k_vector_as_string := k_vector_to_string( k_vector );
-			print( "%", k_vector_as_string );
-		}
-		else {
-			print( "%", k_vector.coefficient );
-		}
-	}
-	else 
-	if node.kind == Node_Kind.Binary_Operator {
-		binary_operator := cast(*Binary_Operator_Node)node;
-
-		print_expression_from_expression_tree( binary_operator.left\_operand );
-
-		if binary_operator.operation == {
-			case #char "^"; { print( "^" ); }
-			case #char "+"; { print( " + " ); }
-			case #char "-"; { print( " - " ); }
-			case; print( "Unhandled operator case in print procedure.\n" );
-		}
-
-		print_expression_from_expression_tree( binary_operator.right_operand );
-	}
-
-	return;
-}
-
 
 clone_k_vector_node :: ( k_vector_node: *K_Vector_Node ) -> ( cloned_node: *K_Vector_Node ) {
 
@@ -898,7 +794,7 @@ simplify :: ( node: *Expression_Node ) -> ( result: *Expression_Node ) {
 } 
 
 // TODO: Combine this and 'distribute_grassmann_products' into a single 'expand' function
-common_factor_theorem :: ( node: *Expression_Node ) -> ( tree: *Expression_Node ) {
+apply_common_factor_theorem :: ( node: *Expression_Node ) -> ( tree: *Expression_Node ) {
 
 	subtree: *Expression_Node;
 	if node.kind != Node_Kind.Binary_Operator {
@@ -1041,8 +937,8 @@ exterior_product :: ( lvalue: *K_Vector_Node, rvalue: *K_Vector_Node ) -> ( resu
 
 	if lvalue.grade == 0 || rvalue.grade == 0 {
 		result.grade       	    = lvalue.grade + rvalue.grade;
-		result.basis_components = lvalue.basis_components | rvalue.basis_components;
 		result.coefficient 	    = lvalue.coefficient * rvalue.coefficient;	
+		result.basis_components = lvalue.basis_components | rvalue.basis_components;
 	}
 	else
 	if (lvalue.basis_components & rvalue.basis_components) == 0 { // no one elements in common; implies sum of grades is less than or equal to N
@@ -1142,32 +1038,33 @@ sort :: ( elements: *[] K_Vector_Node ) {
 	return;
 }
 
-elements_to_expression :: ( elements: [] K_Vector_Node ) -> ( expression: string ) {
+k_element_to_string ::  ( k_element: K_Vector_Node ) -> ( result: string ) {
 
-	k_element_to_string ::  ( k_element: K_Vector_Node ) -> ( result: string ) {
+	builder: String_Builder;
+	num_processed_basis_one_elements: int = 0;
 
-		builder: String_Builder;
-		num_processed_basis_one_elements: int = 0;
-	
-		// need a 'float-to-string' to put the coefficient out front or a call to libc sprintf
-		// punting on the coefficient for now
-		for i: 0..dimension-1 {
-			if k_element.basis_components & (1 << i) {
-				append( *builder, basis_one_elements[i] );
-				if num_processed_basis_one_elements < k_element.grade-1 {
-					// in an expression like e1^e2 the number of exterior products is the grade-1
-					append( *builder, "^" );
-				}
+	coefficient := tprint( "%", k_element.coefficient );
+	append( *builder, coefficient );
 
-				num_processed_basis_one_elements += 1;
+	for i: 0..dimension-1 {
+		if k_element.basis_components & (1 << i) {
+			append( *builder, basis_one_elements[i] );
+			if num_processed_basis_one_elements < k_element.grade-1 {
+				// in an expression like e1^e2 the number of exterior products is the grade-1
+				append( *builder, "^" );
 			}
+
+			num_processed_basis_one_elements += 1;
 		}
-		
-		// TODO: Memory Leak! How do you free the builder memory???
-		s: string = builder_to_string( *builder );
-		
-		return s;
 	}
+	
+	// TODO: Leaking memory on the tprint and the builder
+	s: string = builder_to_string( *builder );
+	
+	return s;
+}
+
+elements_to_expression :: ( elements: [] K_Vector_Node ) -> ( expression: string ) {
 
 	expression_builder: String_Builder;
 	num_processed_elements: int = 0;
@@ -1190,7 +1087,7 @@ eval :: ( expression: string ) -> ( result: string ) {
 	expression_tree: *Expression_Node;
 	expression_tree = parse_expression( expression );
 	expression_tree = distribute_grassmann_products( expression_tree );
-	expression_tree = common_factor_theorem( expression_tree );
+	expression_tree = apply_common_factor_theorem( expression_tree );
 
 	expression_tree = simplify( expression_tree );
 	
@@ -1207,6 +1104,48 @@ eval :: ( expression: string ) -> ( result: string ) {
 
 debug_print :: ( expression: string ) {
 
+	print_expression_tree :: ( node: *Expression_Node, indent: int = 0 ) {
+
+		for i: 0..indent-1 {
+			print( " " );
+		}
+
+		if node.kind == Node_Kind.K_Vector {
+			
+			k_vector := cast(*K_Vector_Node)node;
+
+			k_vector_as_string := k_element_to_string( k_vector );
+			print( "%\n", k_vector_as_string );
+		}
+		else 
+		if node.kind == Node_Kind.Complement { // this might need flipped back to unary operator
+			
+			complement := cast(*Complement_Node)node;
+			if complement.variant == {
+				case .LEFT;  { print( "LC\n" ); }
+				case .RIGHT; { print( "RC\n" ); }
+			}
+			print_expression_tree( complement.operand, indent + 2 );
+		}
+		else 
+		if node.kind == Node_Kind.Binary_Operator {
+			binary_operator := cast(*Binary_Operator_Node)node;
+			
+			if binary_operator.operation == {
+				case #char "^"; { print( "^\n" ); }
+				case #char "R"; { print( "R\n" ); }
+				case #char "+"; { print( "+\n" ); }
+				case #char "-"; { print( "-\n" ); }
+				case; print( "Unhandled operator case in print procedure.\n" );
+			}
+
+			print_expression_tree( binary_operator.left\_operand, indent + 2 );
+			print_expression_tree( binary_operator.right_operand, indent + 2 );
+		}
+
+		return;
+	}
+
 	print( "Debug Printing of Expression: %\n", expression );
 
 	expression_tree: *Expression_Node;
@@ -1221,7 +1160,7 @@ debug_print :: ( expression: string ) {
 	print_expression_tree( expression_tree );
 	print( "\n" );
 
-	expression_tree = common_factor_theorem( expression_tree );
+	expression_tree = apply_common_factor_theorem( expression_tree );
 	print( "Expression tree post application of the common factor theorem:\n" );
 	print_expression_tree( expression_tree );
 	print( "\n" );
@@ -1256,7 +1195,7 @@ test :: (
 	test_differences
 	test_exterior_products
 	test_regressive_products
-	test_
+	test_whatever
 
 	test_case += 1;
 	test_complements
@@ -1336,6 +1275,13 @@ result: string = eval( expression );
 print( "%\n", result );
 
 debug_print( expression );
+
+/*
+print( "Problem child!\n" );
+expression = "-(e1+e2)";
+result = eval( expression );
+print( "%\n", result );
+*/
 
 expression = "e2";
 result = eval( expression );
