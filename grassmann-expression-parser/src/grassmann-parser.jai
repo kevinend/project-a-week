@@ -141,7 +141,7 @@ Unary_Operator_Node :: struct {
 	operand:  *Expression_Node;
 }
 
-Binary_Op :: enum {
+Binary_Op :: enum u8 {
 	Sum;
 	Difference;
 	Exterior_Product;
@@ -152,7 +152,7 @@ Binary_Operator_Node :: struct {
 	// exterior, regressive, and interior products, +, -, *, / (division just handled for scalars now even though grassman division is supported)
 	using _instance: Expression_Node;
 
-	operation: u8;
+	operation: Binary_Op;
 	left_\operand: *Expression_Node;
 	right_operand: *Expression_Node;
 }
@@ -163,6 +163,25 @@ Complement_Variant :: enum {
 }
 
 // procedures:
+
+init_unary_operator :: ( node: *Unary_Operator_Node, operation: Unary_Op, operand: *Expression_Node ) {
+
+	node.kind      = Node_Kind.Unary_Operator;
+	node.operation = operation;
+	node.operand   = operand;
+
+	return;
+}
+
+init_binary_operator :: ( node: *Binary_Operator_Node, operation: Binary_Op, left: *Expression_Node, right: *Expression_Node ) {
+
+	node.kind 	   	   = Node_Kind.Binary_Operator;
+	node.operation 	   = operation;
+	node.left\_operand = left;
+	node.right_operand = right;
+
+	return;
+}
 
 // parsing:
 skip_spaces :: ( s: string ) -> ( cursor: string ) {
@@ -245,19 +264,19 @@ parse_expression :: ( expression: string ) -> ( node: *Expression_Node, cursor: 
 	cursor = skip_spaces( cursor );
 
 	while cursor && (cursor[0] == #char "+" || cursor[0] == #char "-") {
-		operation: u8;
-		next_term: *Expression_Node;
-
-		operation = cursor[0];
+	
+		operation: Binary_Op;
+		if cursor[0] == {
+			case #char "+"; { operation = Binary_Op.Sum; }
+			case #char "-"; { operation = Binary_Op.Difference; }
+		}
 		advance( *cursor, 1 );
 
+		next_term: *Expression_Node;
 		next_term, cursor = parse_exterior_term( cursor );
 
-		node	  		   := New(Binary_Operator_Node);
-		node.kind  		   = Node_Kind.Binary_Operator;
-		node.left_operand  = term;
-		node.operation     = operation;
-		node.right_operand = next_term;
+		node := New(Binary_Operator_Node);
+		init_binary_operator( node, operation, term, next_term );
 
 		term = cast(*Expression_Node)node;
 	}
@@ -274,19 +293,20 @@ parse_exterior_term :: ( expression: string ) -> ( node: *Expression_Node, curso
 	cursor = skip_spaces( cursor );
 
 	while cursor && (cursor[0] == #char "^" || cursor[0] == #char "R") {
-		operation: u8;
-		next_factor: *Expression_Node;
+		
+		operation: Binary_Op;
+		if cursor[0] == {
+			case #char "^"; { operation = Binary_Op.Exterior_Product; }
+			case #char "R"; { operation = Binary_Op.Regressive_Product; }
+		}
 
-		operation = cursor[0];
 		advance( *cursor, 1 );
 
+		next_factor: *Expression_Node;
 		next_factor, cursor = parse_exterior_factor( cursor );
 
-		node	  		   := New(Binary_Operator_Node);
-		node.kind  		   = Node_Kind.Binary_Operator;
-		node.left_operand  = factor;
-		node.operation     = operation;
-		node.right_operand = next_factor;
+		node := New(Binary_Operator_Node);
+		init_binary_operator( node, operation, factor, next_factor );
 
 		factor = cast(*Expression_Node)node;
 	}
@@ -355,47 +375,27 @@ parse_exterior_factor :: ( expression: string ) -> ( node: *Expression_Node, cur
 	}
 
 	if factor_is_negative {
-		negation_node := New(Unary_Operator_Node);
-		init_unary_operator( negation_node, Unary_Op.Negation, node );
+		parent_node := New(Unary_Operator_Node);
+		init_unary_operator( parent_node, .Negation, node );
 
-		node = cast(*Expression_Node)negation_node;
+		node = cast(*Expression_Node)parent_node;
 	}
 
 	if take_left_complement {
-		left_complement_node := New(Unary_Operator_Node);
-		init_unary_operator( left_complement_node, Unary_Op.Left_Complement, node );
+		parent_node := New(Unary_Operator_Node);
+		init_unary_operator( parent_node, .Left_Complement, node );
 
-		node = cast(*Expression_Node)left_complement_node;
+		node = cast(*Expression_Node)parent_node;
 	}
 	else
 	if take_right_complement {
-		right_complement_node := New(Unary_Operator_Node);
-		init_unary_operator( right_complement_node, Unary_Op.Right_Complement, node );
+		parent_node := New(Unary_Operator_Node);
+		init_unary_operator( parent_node, .Right_Complement, node );
 
-		node = cast(*Expression_Node)right_complement_node;
+		node = cast(*Expression_Node)parent_node;
 	}
 
 	return node, cursor;
-}
-
-init_unary_operator :: ( node: *Unary_Operator_Node, operation: Unary_Op, operand: *Expression_Node ) {
-
-	node.kind      = Node_Kind.Unary_Operator;
-	node.operation = operation;
-	node.operand   = operand;
-
-	return;
-}
-
-init_binary_operator :: ( node: *Binary_Operator_Node, operation: Binary_Op, left: *Expression_Node, right: *Expression_Node ) {
-
-	node.kind 	   	   = Node_Kind.Binary_Operator;
-	node.operation 	   = operation;
-	node.left\_operand = left;
-	node.right_operand = right;
-
-	return;
-
 }
 
 // expression-tree:
@@ -452,20 +452,22 @@ clone_k_vector_node :: ( k_vector_node: *K_Vector_Node ) -> ( cloned_node: *K_Ve
 	return cloned_node;
 }
 
-clone_unary_operator_node :: ( unary_operator_node: *Unary_Operator_Node ) -> ( cloned_node: *Unary_Operator_Node ) {
+clone_unary_operator :: ( unary_operator: *Unary_Operator_Node ) -> ( cloned_node: *Unary_Operator_Node ) {
 
 	cloned_node := New(Unary_Operator_Node);
-	init_unary_operator( cloned_node, unary_operator_node.operation, clone_node( unary_operator_node.operand ) );
+	init_unary_operator( cloned_node, unary_operator.operation, clone_node( unary_operator.operand ) );
 	return cloned_node;
 }
 
-clone_binary_operator_node :: ( binary_operator_node: *Binary_Operator_Node ) -> ( cloned_node: *Binary_Operator_Node ) {
+clone_binary_operator :: ( binary_operator: *Binary_Operator_Node ) -> ( cloned_node: *Binary_Operator_Node ) {
 
 	cloned_node := New(Binary_Operator_Node);
-	cloned_node.kind 	  	= Node_Kind.Binary_Operator;
-	cloned_node.operation 	= binary_operator_node.operation;
-	cloned_node.left\_operand = clone_node( binary_operator_node.left\_operand );
-	cloned_node.right_operand = clone_node( binary_operator_node.right_operand );
+	init_binary_operator( 
+		cloned_node
+	   ,binary_operator.operation
+	   ,clone_node( binary_operator.left\_operand )
+	   ,clone_node( binary_operator.right_operand )
+	);
 
 	return cloned_node;
 }
@@ -477,11 +479,11 @@ clone_node :: ( node: *Expression_Node ) -> ( cloned_node: *Expression_Node ) {
 	}
 	else
 	if node.kind == Node_Kind.Unary_Operator {
-		return cast(*Expression_Node)clone_unary_operator_node( cast(*Unary_Operator_Node)node );
+		return cast(*Expression_Node)clone_unary_operator( cast(*Unary_Operator_Node)node );
 	}
 	else
 	if node.kind == Node_Kind.Binary_Operator {
-		return cast(*Expression_Node)clone_binary_operator_node( cast(*Binary_Operator_Node)node );
+		return cast(*Expression_Node)clone_binary_operator( cast(*Binary_Operator_Node)node );
 	}
 	else {
 		print( "Unrecognized node kind found when cloning nodes\n" );
@@ -489,8 +491,8 @@ clone_node :: ( node: *Expression_Node ) -> ( cloned_node: *Expression_Node ) {
 	}
 }
 
-is_grassmann_operator :: ( op: u8 ) -> (bool) {
-	if op == #char "^" || op == #char "R" {
+is_grassmann_operator :: ( op: Binary_Op ) -> (bool) {
+	if op == .Exterior_Product || op == .Regressive_Product {
 		return true;
 	}
 	else {
@@ -511,34 +513,34 @@ distribute_grassmann_products :: ( node: *Expression_Node ) -> ( tree: *Expressi
 	}
 	else 
 	if node.kind == Node_Kind.Unary_Operator {
-		unary_operator_node  := cast(*Unary_Operator_Node)node;
+		unary_operator  := cast(*Unary_Operator_Node)node;
 
 		// determine whether we need to distribute the operator or not
 		need_to_distribute: bool = false;
-		if unary_operator_node.operand.kind == Node_Kind.Binary_Operator {
-			binary_operator_node := cast(*Binary_Operator_Node)unary_operator_node.operand;
-			if binary_operator_node.operation == #char "+" || binary_operator_node.operation == #char "-" {
+		if unary_operator.operand.kind == Node_Kind.Binary_Operator {
+			binary_operator := cast(*Binary_Operator_Node)unary_operator.operand;
+			if binary_operator.operation == .Sum || binary_operator.operation == .Difference {
 				need_to_distribute = true;
 			}
 		}
 
 		if need_to_distribute {
-			binary_operator_node := cast(*Binary_Operator_Node)unary_operator_node.operand;
+			binary_operator := cast(*Binary_Operator_Node)unary_operator.operand;
 
-			new_binary_operator_node := New(Binary_Operator_Node);
+			new_binary_operator := New(Binary_Operator_Node);
 				
 			new_left\_node := New(Unary_Operator_Node); 
 			new_right_node := New(Unary_Operator_Node);
 
-			init_unary_operator( new_left\_node, unary_operator_node.operation, clone_node( binary_operator_node.left\_operand ) );
-			init_unary_operator( new_right_node, unary_operator_node.operation, clone_node( binary_operator_node.right_operand ) );
+			init_unary_operator( new_left\_node, unary_operator.operation, clone_node( binary_operator.left\_operand ) );
+			init_unary_operator( new_right_node, unary_operator.operation, clone_node( binary_operator.right_operand ) );
 
-			new_binary_operator_node.kind      = Node_Kind.Binary_Operator;
-			new_binary_operator_node.operation = binary_operator_node.operation;
-			new_binary_operator_node.left\_operand = distribute_grassmann_products( cast(*Expression_Node)new_left\_node );
-			new_binary_operator_node.right_operand = distribute_grassmann_products( cast(*Expression_Node)new_right_node );
+			new_binary_operator.kind      = Node_Kind.Binary_Operator;
+			new_binary_operator.operation = binary_operator.operation;
+			new_binary_operator.left\_operand = distribute_grassmann_products( cast(*Expression_Node)new_left\_node );
+			new_binary_operator.right_operand = distribute_grassmann_products( cast(*Expression_Node)new_right_node );
 
-			subtree = cast(*Expression_Node)new_binary_operator_node;
+			subtree = cast(*Expression_Node)new_binary_operator;
 		}
 		else {
 			subtree = clone_node( node );
@@ -550,23 +552,23 @@ distribute_grassmann_products :: ( node: *Expression_Node ) -> ( tree: *Expressi
 		// do it that way (it was very hard to visually parse and a lot of duplicate 'clone the current node because
 		// we don't need to distribute')
 
-		binary_operator_node := cast(*Binary_Operator_Node)node;
+		binary_operator := cast(*Binary_Operator_Node)node;
 		left\_operator: *Binary_Operator_Node = null;
 		right_operator: *Binary_Operator_Node = null;
 
 		distribute_over_left\_operand := false;
 		distribute_over_right_operand := false;
 
-		if is_grassmann_operator(binary_operator_node.operation) {
-			if binary_operator_node.left_operand.kind == Node_Kind.Binary_Operator {
-				left_operator = cast(*Binary_Operator_Node)binary_operator_node.left_operand;
-				if left_operator.operation == #char "+" || left_operator.operation == #char "-" {
+		if is_grassmann_operator(binary_operator.operation) {
+			if binary_operator.left_operand.kind == Node_Kind.Binary_Operator {
+				left_operator = cast(*Binary_Operator_Node)binary_operator.left_operand;
+				if left_operator.operation == .Sum || left_operator.operation == .Difference {
 					distribute_over_left_operand = true;
 				}
 			}
-			else if binary_operator_node.right_operand.kind == Node_Kind.Binary_Operator {
-				right_operator = cast(*Binary_Operator_Node)binary_operator_node.right_operand;
-				if right_operator.operation == #char "+" || right_operator.operation == #char "-" {
+			else if binary_operator.right_operand.kind == Node_Kind.Binary_Operator {
+				right_operator = cast(*Binary_Operator_Node)binary_operator.right_operand;
+				if right_operator.operation == .Sum || right_operator.operation == .Difference {
 					distribute_over_right_operand = true;
 				}	
 			}
@@ -574,10 +576,10 @@ distribute_grassmann_products :: ( node: *Expression_Node ) -> ( tree: *Expressi
 
 		if distribute_over_left_operand {
 			// distribute the argument on the right over the argument on the right
-			distributive_operator    := binary_operator_node.operation;
+			distributive_operator    := binary_operator.operation;
 			distribute_over_operator := left_operator.operation;
 
-			new_binary_operator_node := New(Binary_Operator_Node);
+			new_binary_operator := New(Binary_Operator_Node);
 
 			new_left\_node := New(Binary_Operator_Node);
 			new_right_node := New(Binary_Operator_Node);
@@ -585,47 +587,47 @@ distribute_grassmann_products :: ( node: *Expression_Node ) -> ( tree: *Expressi
 			new_left_node.kind           = Node_Kind.Binary_Operator;
 			new_left_node.operation 	 = distributive_operator;
 			new_left_node.left_operand   = clone_node( cast(*Expression_Node)left_operator.left_operand );
-			new_left_node.right_operand  = clone_node( cast(*Expression_Node)binary_operator_node.right_operand );
+			new_left_node.right_operand  = clone_node( cast(*Expression_Node)binary_operator.right_operand );
 
 			new_right_node.kind          = Node_Kind.Binary_Operator;
 			new_right_node.operation 	 = distributive_operator;
 			new_right_node.left_operand  = clone_node( cast(*Expression_Node) left_operator.right_operand ); 
-			new_right_node.right_operand = clone_node( cast(*Expression_Node) binary_operator_node.right_operand );
+			new_right_node.right_operand = clone_node( cast(*Expression_Node) binary_operator.right_operand );
 
-			new_binary_operator_node.kind          = Node_Kind.Binary_Operator;
-			new_binary_operator_node.operation     = distribute_over_operator; // + or -
-			new_binary_operator_node.left\_operand = distribute_grassmann_products( cast(*Expression_Node)new_left\_node );
-			new_binary_operator_node.right_operand = distribute_grassmann_products( cast(*Expression_Node)new_right_node );
+			new_binary_operator.kind          = Node_Kind.Binary_Operator;
+			new_binary_operator.operation     = distribute_over_operator; // + or -
+			new_binary_operator.left\_operand = distribute_grassmann_products( cast(*Expression_Node)new_left\_node );
+			new_binary_operator.right_operand = distribute_grassmann_products( cast(*Expression_Node)new_right_node );
 
-			subtree = cast(*Expression_Node)new_binary_operator_node;
+			subtree = cast(*Expression_Node)new_binary_operator;
 		}
 		else
 		if distribute_over_right_operand {
 			// distribute the argument on the left over the argument on the right
-			distributive_operator    := binary_operator_node.operation;
+			distributive_operator    := binary_operator.operation;
 			distribute_over_operator := right_operator.operation;
 
-			new_binary_operator_node := New(Binary_Operator_Node);
+			new_binary_operator := New(Binary_Operator_Node);
 
 			new_\left_node := New(Binary_Operator_Node);
 			new_right_node := New(Binary_Operator_Node);
 
 			new_left_node.kind           = Node_Kind.Binary_Operator;
 			new_left_node.operation 	 = distributive_operator;
-			new_left_node.left_operand   = clone_node( cast(*Expression_Node)binary_operator_node.left_operand );
+			new_left_node.left_operand   = clone_node( cast(*Expression_Node)binary_operator.left_operand );
 			new_left_node.right_operand  = clone_node( cast(*Expression_Node)right_operator.left_operand );
 
 			new_right_node.kind          = Node_Kind.Binary_Operator;
 			new_right_node.operation 	 = distributive_operator;
-			new_right_node.left_operand  = clone_node( cast(*Expression_Node)binary_operator_node.left_operand );
+			new_right_node.left_operand  = clone_node( cast(*Expression_Node)binary_operator.left_operand );
 			new_right_node.right_operand = clone_node( cast(*Expression_Node)right_operator.right_operand );
 			
-			new_binary_operator_node.kind          = Node_Kind.Binary_Operator;
-			new_binary_operator_node.operation     = distribute_over_operator; // + or -
-			new_binary_operator_node.left\_operand = distribute_grassmann_products( cast(*Expression_Node)new_left\_node );
-			new_binary_operator_node.right_operand = distribute_grassmann_products( cast(*Expression_Node)new_right_node );
+			new_binary_operator.kind          = Node_Kind.Binary_Operator;
+			new_binary_operator.operation     = distribute_over_operator; // + or -
+			new_binary_operator.left\_operand = distribute_grassmann_products( cast(*Expression_Node)new_left\_node );
+			new_binary_operator.right_operand = distribute_grassmann_products( cast(*Expression_Node)new_right_node );
 
-			subtree = cast(*Expression_Node)new_binary_operator_node;
+			subtree = cast(*Expression_Node)new_binary_operator;
 		}
 		else {
 			subtree = clone_node( node );
@@ -772,44 +774,44 @@ simplify :: ( node: *Expression_Node ) -> ( result: *Expression_Node ) {
 	else
 	if node.kind == Node_Kind.Unary_Operator {
 		// this is running post distribution, so we should know that the arg is a k-vetor node
-		unary_operator_node := cast(*Unary_Operator_Node)node;
-		operand := cast(*K_Vector_Node)unary_operator_node.operand;
+		unary_operator := cast(*Unary_Operator_Node)node;
+		operand := cast(*K_Vector_Node)unary_operator.operand;
 
-		if unary_operator_node.operation == Unary_Op.Left_Complement {
+		if unary_operator.operation == .Left_Complement {
 			result = cast(*Expression_Node)complement( Complement_Variant.Left, operand );
 		}
 		else
-		if unary_operator_node.operation == Unary_Op.Right_Complement {
+		if unary_operator.operation == .Right_Complement {
 			result = cast(*Expression_Node)complement( Complement_Variant.Right, operand );
 		}
 		else 
-		if unary_operator_node.operation == Unary_Op.Negation {
+		if unary_operator.operation == .Negation {
 			operand.coefficient *= -1;
 			result = cast(*Expression_Node)clone_k_vector_node( operand );
 		}
 	}
 	else {
-		binary_operator_node := cast(*Binary_Operator_Node)node;
-		binary_operator_node.left\_operand = simplify( binary_operator_node.left\_operand );
-		binary_operator_node.right_operand = simplify( binary_operator_node.right_operand );
+		binary_operator := cast(*Binary_Operator_Node)node;
+		binary_operator.left\_operand = simplify( binary_operator.left\_operand );
+		binary_operator.right_operand = simplify( binary_operator.right_operand );
 
-		if binary_operator_node.left\_operand.kind == Node_Kind.K_Vector && binary_operator_node.right_operand.kind == Node_Kind.K_Vector {
-			left  := cast(*K_Vector_Node)binary_operator_node.left\_operand;
-			right := cast(*K_Vector_Node)binary_operator_node.right_operand;
+		if binary_operator.left\_operand.kind == Node_Kind.K_Vector && binary_operator.right_operand.kind == Node_Kind.K_Vector {
+			left  := cast(*K_Vector_Node)binary_operator.left\_operand;
+			right := cast(*K_Vector_Node)binary_operator.right_operand;
 
-			operation := binary_operator_node.operation;
-			if operation == #char "^" {
+			operation := binary_operator.operation;
+			if operation == .Exterior_Product {
 				result = cast(*Expression_Node)exterior_product( left, right );
 			}
 			else
-			if operation == #char "R" {
+			if operation == .Regressive_Product {
 				result = cast(*Expression_Node)regressive_product( left, right );
 			}
 			else 
-			if operation == #char "+" || operation == #char "-" {
+			if operation == .Sum || operation == .Difference {
 				if left.grade == right.grade && left.basis_components == right.basis_components {
 					sum := clone_k_vector_node( left );
-					if operation == #char "-" { right.coefficient *= -1; } // part of expand could be converting differences into sums
+					if operation == .Difference { right.coefficient *= -1; } // part of expand could be converting differences into sums
 					sum.coefficient += right.coefficient;
 					result = cast(*Expression_Node)sum;
 				}
@@ -837,10 +839,10 @@ apply_common_factor_theorem :: ( node: *Expression_Node ) -> ( tree: *Expression
 	}
 	else {
 		// Determine whether we need to apply the common factor theorem to any regressive products.
-		binary_operator_node := cast(*Binary_Operator_Node)node;
-		if binary_operator_node.operation == #char "R" {
-			left  := cast(*K_Vector_Node)simplify( binary_operator_node.left\_operand );
-			right := cast(*K_Vector_Node)simplify( binary_operator_node.right_operand );
+		binary_operator := cast(*Binary_Operator_Node)node;
+		if binary_operator.operation == .Regressive_Product {
+			left  := cast(*K_Vector_Node)simplify( binary_operator.left\_operand );
+			right := cast(*K_Vector_Node)simplify( binary_operator.right_operand );
 
 			if (left.grade + right.grade) < dimension {
 				// regressive product is zero, don't bother expanding
@@ -873,11 +875,11 @@ apply_common_factor_theorem :: ( node: *Expression_Node ) -> ( tree: *Expression
 
 					regressive_product_node := New(Binary_Operator_Node);
 					regressive_product_node.kind = Node_Kind.Binary_Operator;
-					regressive_product_node.operation = #char "R";
+					regressive_product_node.operation = .Regressive_Product;
 				
 					exterior_product_node := New(Binary_Operator_Node);
 					exterior_product_node.kind = Node_Kind.Binary_Operator;
-					exterior_product_node.operation = #char "^";
+					exterior_product_node.operation = .Exterior_Product;
 					exterior_product_node.left\_operand = cast(*Expression_Node)clone_k_vector_node( left ); 
 					exterior_product_node.right_operand = cast(*Expression_Node)k_cospan[i];
 
@@ -903,7 +905,7 @@ apply_common_factor_theorem :: ( node: *Expression_Node ) -> ( tree: *Expression
 
 					root := New(Binary_Operator_Node);
 					root.kind = Node_Kind.Binary_Operator;
-					root.operation = #char "+";
+					root.operation = .Sum;
 					
 					i: int = 0;
 					current := root;
@@ -912,7 +914,7 @@ apply_common_factor_theorem :: ( node: *Expression_Node ) -> ( tree: *Expression
 						
 						next := New(Binary_Operator_Node);
 						next.kind 	   = Node_Kind.Binary_Operator;
-						next.operation = #char "+";
+						next.operation = .Sum;
 
 						current.right_operand = cast(*Expression_Node)next;
 						current = next;
@@ -1035,9 +1037,9 @@ flatten :: ( subtree: *Expression_Node ) -> ( elements: [..] K_Vector_Node ) {
 		}
 		else
 		if node.kind == Node_Kind.Binary_Operator {
-			binary_operator_node := cast(*Binary_Operator_Node)node;
-			helper( binary_operator_node.left\_operand, elements );
-			helper( binary_operator_node.right_operand, elements );
+			binary_operator := cast(*Binary_Operator_Node)node;
+			helper( binary_operator.left\_operand, elements );
+			helper( binary_operator.right_operand, elements );
 		}
 
 		return;
@@ -1154,25 +1156,25 @@ debug_print :: ( expression: string ) {
 		}
 		else 
 		if node.kind == Node_Kind.Unary_Operator {
-			unary_operator_node := cast(*Unary_Operator_Node)node;
+			unary_operator := cast(*Unary_Operator_Node)node;
 			
-			if unary_operator_node.operation == {
+			if unary_operator.operation == {
 				case .Negation; 		{ print( "-\n"  ); }
 				case .Left\_Complement; { print( "LC\n" ); }
 				case .Right_Complement; { print( "RC\n" ); }
 			}
 
-			print_expression_tree( unary_operator_node.operand, indent + 2 );
+			print_expression_tree( unary_operator.operand, indent + 2 );
 		}
 		else 
 		if node.kind == Node_Kind.Binary_Operator {
 			binary_operator := cast(*Binary_Operator_Node)node;
 			
 			if binary_operator.operation == {
-				case #char "^"; { print( "^\n" ); }
-				case #char "R"; { print( "R\n" ); }
-				case #char "+"; { print( "+\n" ); }
-				case #char "-"; { print( "-\n" ); }
+				case .Exterior_Product; 	{ print( "^\n" ); }
+				case .Regressive_Product; 	{ print( "R\n" ); }
+				case .Sum;					{ print( "+\n" ); }
+				case .Difference; 			{ print( "-\n" ); }
 				case; print( "Unhandled operator case in print procedure.\n" );
 			}
 
@@ -1305,80 +1307,67 @@ main :: () {
 // test N=3, "e1^(e1+e2)" 
 // test N=3, "(e1+e3)^(e1+e2)" 
 
-// THESE SHOULD BE TESTS AS WELL!
-init_dimension( N = 4 );
-init_basis_one_elements( string.["e1","e2","e3","e4"] );
+	// THESE SHOULD BE TESTS AS WELL!
+	init_dimension( N = 4 );
+	init_basis_one_elements( string.["e1","e2","e3","e4"] );
 
-expression: string = "-e1";
-result: string = eval( expression );
-print( "%\n", result );
+	expression: string = "e1";
+	result: string = eval( expression );
+	print( "%\n", result );
 
-debug_print( expression );
+	debug_print( expression );
 
+	expression = "-e1";
+	result = eval( expression );
+	print( "%\n", result );
 
-/*
+	expression = "-(e1+e2)";
+	result = eval( expression );
+	print( "%\n", result );
 
-expression: string = "e1";
-result: string = eval( expression );
-print( "%\n", result );
+	expression = "e2";
+	result = eval( expression );
+	print( "%\n", result );
 
-debug_print( expression );
+	expression = "e3";
+	result = eval( expression );
+	print( "%\n", result );
 
-expression = "-e1";
-result = eval( expression );
-print( "%\n", result );
+	expression = "e4";
+	result = eval( expression );
+	print( "%\n", result );
 
-debug_print( expression );
+	expression = "e1^e2";
+	result = eval( expression );
+	print( "%\n", result );
 
-expression = "-(e1+e2)";
-result = eval( expression );
-print( "%\n", result );
+	expression = "e1^e1";  // this is zero and not sure we represent that at all since we don't have coefficients
+	result = eval( expression );
+	print( "%\n", result );
 
-expression = "e2";
-result = eval( expression );
-print( "%\n", result );
+	expression = "e1+e2";  // this is zero and not sure we represent that at all since we don't have coefficients
+	result = eval( expression );
+	print( "%\n", result );
 
-expression = "e3";
-result = eval( expression );
-print( "%\n", result );
+	expression = "e1+e2+e3";  // this is zero and not sure we represent that at all since we don't have coefficients
+	result = eval( expression );
+	print( "%\n", result );
 
-expression = "e4";
-result = eval( expression );
-print( "%\n", result );
+	expression = "e1^(e1+e2)";  // printing 1 in there but oh well
+	result = eval( expression );
+	print( "%\n", result );
 
-expression = "e1^e2";
-result = eval( expression );
-print( "%\n", result );
+	expression = "LC(e1)"; 
+	result = eval( expression );
+	print( "%\n", result );
 
-expression = "e1^e1";  // this is zero and not sure we represent that at all since we don't have coefficients
-result = eval( expression );
-print( "%\n", result );
+	expression = "RC(e1)"; 
+	result = eval( expression );
+	print( "%\n", result );
 
-expression = "e1+e2";  // this is zero and not sure we represent that at all since we don't have coefficients
-result = eval( expression );
-print( "%\n", result );
-
-expression = "e1+e2+e3";  // this is zero and not sure we represent that at all since we don't have coefficients
-result = eval( expression );
-print( "%\n", result );
-
-expression = "e1^(e1+e2)";  // printing 1 in there but oh well
-result = eval( expression );
-print( "%\n", result );
-
-expression = "LC(e1)"; 
-result = eval( expression );
-print( "%\n", result );
-
-expression = "RC(e1)"; 
-result = eval( expression );
-print( "%\n", result );
-
-expression = "(e2^e3)R(e1^e3^e4)";  // cool it works but we still have the 'zero' problem
-result = eval( expression );
-print( "%\n", result );
-
-*/
+	expression = "(e2^e3)R(e1^e3^e4)";  // cool it works but we still have the 'zero' problem
+	result = eval( expression );
+	print( "%\n", result );
 
 	return;
 }
