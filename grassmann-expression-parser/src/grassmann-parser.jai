@@ -1083,10 +1083,7 @@ regressive_product :: ( lvalue: *K_Vector_Node, rvalue: *K_Vector_Node ) -> ( re
 	return result;
 }
 
-// TODO: We can replace eval with an eval that does our steps with flatten2 and sort
-//       Just sucks that we have to simplify to use the common factor theorem otherwise i like
-//       The way I had the old eval, it just isn't the best way for now
-flatten2 :: ( subtree: *Expression_Node ) -> ( elements: [..] K_Vector_Node ) {
+flatten :: ( subtree: *Expression_Node ) -> ( elements: [..] K_Vector_Node ) {
 
 	// This procedure returns a flat array of k-elements.
 	// At this point simplify has executed from the root and we are either left with a single k-element
@@ -1188,7 +1185,7 @@ elements_to_expression :: ( elements: [] K_Vector_Node ) -> ( expression: string
 	return expression;
 }
 
-eval2 :: ( expression: string ) -> ( result: string ) {
+eval :: ( expression: string ) -> ( result: string ) {
 
 	expression_tree: *Expression_Node;
 	expression_tree = parse_expression( expression );
@@ -1198,7 +1195,7 @@ eval2 :: ( expression: string ) -> ( result: string ) {
 	expression_tree = simplify( expression_tree );
 	
 	elements: [..] K_Vector_Node;
-	elements = flatten2( expression_tree );
+	elements = flatten( expression_tree );
 	
 	sort( *elements );
 
@@ -1208,192 +1205,42 @@ eval2 :: ( expression: string ) -> ( result: string ) {
 	return result;
 }
 
-	
-flatten :: ( subtree: *Expression_Node ) -> ( operators: [..] u8, elements: [..] K_Vector_Node ) {
-	
-	// In-order traversal of the distributed expression tree.
-	// Once we have the flattened list of operators (sums/differences/grassmann products) and elements (1-vector/basis 1 elements)
-	// we need to evaluate the possible cases of our tree.
-	//
-	
-	flatten_helper :: ( node: *Expression_Node, operators: *[..] u8, elements: *[..] K_Vector_Node ) {
+debug_print :: ( expression: string ) {
 
-		success: bool;
-		
-		if node.kind == Node_Kind.K_Vector {
-			k_vector_node := cast(*K_Vector_Node)node;
-			
-			k_vector: K_Vector_Node;
-			k_vector.kind 		 	  = Node_Kind.K_Vector;
-			k_vector.coefficient 	  = k_vector_node.coefficient;
-			k_vector.grade       	  = k_vector_node.grade;
-			k_vector.basis_components = k_vector_node.basis_components;
+	print( "Debug Printing of Expression: %\n", expression );
 
-			array_add( elements, k_vector );
-		}
-		else
-		if node.kind == Node_Kind.Binary_Operator {
-			binary_operator_node := cast(*Binary_Operator_Node)node;
-			flatten_helper( binary_operator_node.left\_operand, operators, elements );
+	expression_tree: *Expression_Node;
+	expression_tree = parse_expression( expression );
 
-			array_add( operators, binary_operator_node.operation );
+	print( "Initial expression tree\n" );
+	print_expression_tree( expression_tree );
+	print( "\n" );
 
-			flatten_helper( binary_operator_node.right_operand, operators, elements );
-		}
-	}
+	expression_tree = distribute_grassmann_products( expression_tree );
+	print( "Expression tree post distribution of grassmann products:\n" );
+	print_expression_tree( expression_tree );
+	print( "\n" );
 
-	operators: [..] u8;
-	elements:  [..] K_Vector_Node;
+	expression_tree = common_factor_theorem( expression_tree );
+	print( "Expression tree post application of the common factor theorem:\n" );
+	print_expression_tree( expression_tree );
+	print( "\n" );
 
-	flatten_helper( subtree, *operators, *elements );
+	elements: [..] K_Vector_Node;
+	elements = flatten( expression_tree );
 
-	return operators, elements;
+	sort ( *elements );
+
+	result: string;
+	result = elements_to_expression( elements );
+
+	print( "Simplified expression:\n" );
+	print( "%\n", result );
+
+	return;
 }
 
-// you want a consistent e0 + e1 + e2 not e2 + e0 + e1 then sometimes it's e0 + e2 + e1
-// the tree needs copied over then sorted
-// so simplify needs to handle sums and differences up to a point
-// then we want to create a K-Vector representing a thingy and put it in there
-//  e1 e2 e3
-//  1   2  4
-// do we just add them in the order, and search through to find the final answer
-// i feel like you know that there are however many basis-k-vectors so you just have those then make the products of those
-//  [e1,e2,e3,e1e2,e1e3,e1e2,e123] then you add to those then you just filter out the ones you don't need
-// then runtime is pretty consistent for all of them
-// or you add them to a hashtable and look them up
-// or you have a grade 2 whose index is 1 2 = 3/2-1 offset+index
-// what is the offset? need a table
-// n-choose-k
-//
-// this seems a little weird to me but it might just work, you have to filter through a bunch of k-vectors though
-// can we just sort the string? not really
-//
-// THREE OPTIONS:
-//  1. Don't do shit with the tree (fastest, don't like because the order could be all over the place)
-//  2. Basis elements array (do a lookup with some quick math and offsets, add then filter then convert to a string); go this route
-//  3. Insert into an ordered list (slow as shit but pretty easy to write)
-
-
-
-// instead of flatten, we have eval that allows you to evaluate from certain points in the tree
-// so flatten traverses the entire tree but what eval should do is generate a tree that is just sums
-// then if we have sums or whatever, then you don't necessarily have to flatten the tree if you don't want to
-// you could kind of just leave it and generate the expression if you want to...decisions, decisions
-// i really like the idea of eval 
-// if you can resolve the sum, go ahead, if you can't then you can't, 
-// or difference, then you can flatten and remove sums if need be
-//
-
-eval :: ( operators: [] u8, elements: [] K_Vector_Node ) -> ( k_vectors: [..] K_Vector_Node ) {
-
-		bubble_sort :: ( k_vectors: *[] K_Vector_Node ) {
-
-		swap: bool     = false;
-		for _: 0..k_vectors.count-1 {
-			for i: 0..k_vectors.count-2 {
-				if 	(<<k_vectors)[i+1].grade <= (<<k_vectors)[i].grade && 
-			   		(<<k_vectors)[i+1].basis_components < (<<k_vectors)[i].basis_components {
-
-					temp     	  	          := (<<k_vectors)[i];
-					(<<k_vectors)[i]   = (<<k_vectors)[i+1];
-					(<<k_vectors)[i+1] = temp;
-
-					swap = true;
-				}
-			}
-
-			if !swap { return; }
-			swap = false;
-		}
-	}
-
-	// Possible cases with the operators and elements:
-	//	1. No operators need applied, return the element
-	//		operators: []
-	//		elements : [k-vector]
-	//
-	// 2. Grassmann products only; apply the operators to build the resulting single k-vector element
-	//      operators: [^,^,^..] 
-	//		elements:  [k-vector1, k-vector2, k-vector3...]
-	//
-	// 3. Sums and difference only; sort the elements so k-vectors of same basis components can be summed
-	//		operators: [+,-,+]
-	//		elements:  [e1,e2,e1]
-	//
-	//		sort( elements );
-	//
-	//		operators: [+,+,+] 
-	//		elements: [e1,e1,-e2]
-	//
-	// 4. Grassmann products and sums/differences; resolve grassmann products, sort then sum elements.
-	//		operators: [^^+^]
-	//		elements:  [e1,e2,e3,e2,e3]
-	//
-	//		Post grassmann eval:
-	//		operators: [+]
-	//		elements:  [e1e2e3,e2e3]
-	//
-	// 		sort( elements );
-	//		
-	//		operators: [+]
-	//		elements: [e2e3,e1e2e3]
-	//
-	//		Final Result:
-	//		e2^e3 + e1^e2^e3
-
-  
-  	// When this is a single element this process is wasteful.
-  	// We 'dequeue' the element and 'enqueue' it twice before returning it as the result.
-  	// However, it does provide a nice flat structure to the code.
-
-  	success: bool;
-
- 	lvalue: K_Vector_Node;
- 	rvalue: K_Vector_Node;
- 	op: u8;
-
- 	products: [..] K_Vector_Node; // if single element think 1^e1 == e1 or N \/ e1 = e1
-
-	lvalue = elements[0];
-	for i: 0..operators.count-1 {
-		op = operators[i];
-		rvalue = elements[i+1];
-		if op == #char "^" { 
-			lvalue = exterior_product( *lvalue, *rvalue ); 
-		}
-		else
-		if op == #char "R" {
-			lvalue = regressive_product( *lvalue, *rvalue );
-		}
-		else
-		if op == #char "+" || op == #char "-" {
-			if op == #char "-" { rvalue.coefficient *= -1; }
-			array_add( *products, lvalue );
-			lvalue = rvalue;
-		}
-	}
-	array_add( *products, lvalue );
-
-	bubble_sort( *products );
-
-	results: [..] K_Vector_Node;
-
-	lvalue = products[0];
-	for i: 1..products.count-1 {
-		rvalue = products[i];
-		if lvalue.basis_components == rvalue.basis_components {
-			lvalue.coefficient += rvalue.coefficient;
-		}
-		else {
-			array_add( *results, lvalue );
-			lvalue = rvalue;
-		}
-	}
-	array_add( *results, lvalue );
-
-	return results;
-}
-
+/* Not obvious how I should do this necessarily, but it should work way different, maybe a video on testing
 test :: ( 
 	 dimension: u8
 	,basis: [] string
@@ -1404,290 +1251,134 @@ test :: (
 	,should_print_expression_tree_post_grassmann_operator_eval: bool = true
 ) {
 
+	test_complements
+	test_sums
+	test_differences
+	test_exterior_products
+	test_regressive_products
+	test_
+
 	test_case += 1;
+	test_complements
 
 	init_dimension( N = dimension );
 	init_basis_one_elements( basis );
 
+	// test should be way way different
+
 	print( "Test case %:\n", test_case );
 	print( "Original Expression: %\n", expression );
 
-	expression_tree: *Expression_Node = parse_expression( expression );
-	if should_print_expression_tree_post_parsing {
-		print( "Initial expression tree\n" );
-		print_expression_tree( expression_tree );
-		print( "\n" );
-	}
-
-	expression_tree_post_distribution := distribute_grassmann_products( expression_tree );
-	if should_print_expression_tree_post_distribution {
-		print( "Expression tree post distribution of grassmann products:\n" );
-		print_expression_tree( expression_tree_post_distribution );
-	}
-
-	expression_tree_post_common_factor_theorem := common_factor_theorem( expression_tree_post_distribution );
-	if should_print_expression_tree_post_common_factor_theorem {
-		print( "Expression tree post application of the common factor theorem:\n" );
-		print_expression_tree( expression_tree_post_common_factor_theorem );
-	}
-
-	operators, elements := flatten( expression_tree_post_common_factor_theorem );
-
-	results := eval( operators, elements );
-
-	// print_simplified_expression()
-	for result: results {
-		k_vector_as_string := k_vector_to_string( *result );
-		print( "%1%2 ", result.coefficient, k_vector_as_string );
-	}
-	print( "\n" );
-
 	return;
 }
+*/
 
 main :: () {
 
-/*
-// THIS SECTION IS COMPLEMENTS BUT LIKE IN THE EARLY PHASES
-{
+// test N=3 RC(e1)
+// test N=3 RC(e2)
+// test N=3 RC(e1^e3)
+// test N=2 RC(e2)
+// test N=2 RC(e1)
+// test N=4 RC(e1^e2)
+// test N=4 RC(e1)
+// test N=4 RC(e2)
+// test N=4 RC(e1+(e3+e2))
+// test N=4 RC(e1) + e2
+// test N=4 k-span(e1^e2^e3^e4, 1) // this is where the 'tokenizer' will be important
+// test N=4 k-span(e1^e2^e3^e4, 2)
+// test N=4 k-span(e1^e2^e3^e4, 3)
+// test N=4 k-span(e1^e2^e3^e4, 4)
+// test N=4 k-cospan(e1^e2^e3^e4, 1) // M-1 elements for the next couple
+// test N=4 k-cospan(e1^e2^e3^e4, 2)
+// test N=4 k-cospan(e1^e2^e3^e4, 3)
+// test N=4 k-cospan(e1^e2^e3^e4, 4)
+// test N=4 (e2^e3)R(e1^e3^e4)
+// test N=5,(e1^e2^e3)+(e2^e3^e4)+(e1^e4^e5)
+// test N=3, "3"
+// test N=3, "3^3" // the sum might be broken, that's okay though
+// test N=3, "e1^e2"
+// test N=3, "3+3"
+// test N=3, "3+3+3"
+// test N=3, "e2^e1"
+// test N=3, "e1^(e1+e2)"
+// test N=3, "(e1+e2)^(e1+e2)"
+// test N=3, "e1 + e2 + e1"
+// test N=3, "3+e1+3"
+// test N=3, "e1^(e1+e2+e3)"
+// test N=3, "(e1+e2)^(e1+e2+e3)" 
+// test N=3, "3" 
+// test N=3, "-3" 
+// test N=3, "3^5" 
+// test N=3, "-3^-5"
+// test N=3, "3^e1"
+// test N=3, "-3^e1"
+// test N=3, "e1^e1"
+// test N=3, "e1^e2"	
+// test N=3, "(e1^e2)"
+// test N=3, "(e1^e2)^e3"
+// test N=3, "e1^e2^e3"
+// test N=3, "(3^e1)^(4^e2)"	
+// test N=3, "e1+e1"
+// test N=3, "e1-e1"
+// test N=3, "e1+e2+e1" 
+// test N=3, "e1-2^e1"
+// test N=3, "e1^e2+e1"
+// test N=3, "e1^(e1+e2)" 
+// test N=3, "(e1+e3)^(e1+e2)" 
 
-//	test( dimension = 4, basis = string.["e1","e2","e3","e4"], expression = "RC(e1)" );	// okay it printed in the tree correctly
-//  test( dimension = 4, basis = string.["e1","e2","e3","e4"], expression = "RC(e1+(e3+e2))" );	// okay it printed in the tree correctly
-//	test( dimension = 4, basis = string.["e1","e2","e3","e4"], expression = "RC(e1) + e2" );	// okay it printed in the tree correctly
-
-}
-
-// THIS SECTION IS COMPLEMENT TESTING!
-{
-	init_dimension( 3 );
-	init_basis_one_elements( string.["e1","e2","e3"] );
-
-	e1: K_Vector_Node;
-	e1.basis_components = 1;
-	e1.grade = 1;
-	e1.coefficient = 1;
-
-	e2e3 := complement( .RIGHT, *e1 );
-	print_expression_tree( cast(*Expression_Node)e2e3 );
-
-}
-
-{
-	init_dimension( 3 );
-	init_basis_one_elements( string.["e1","e2","e3"] );
-
-	e2: K_Vector_Node;
-	e2.basis_components = 2;
-	e2.grade = 1;
-	e2.coefficient = 1;
-
-	e1e3 := complement( .RIGHT, *e2 );
-	print_expression_tree( cast(*Expression_Node)e1e3 );
-}
- 
-{
-
-	init_dimension( 3 );
-	init_basis_one_elements( string.["e1","e2","e3"] );
-
-	e1e3: K_Vector_Node;
-	e1e3.basis_components = 5;
-	e1e3.grade = 2;
-	e1e3.coefficient = 1;
-
-	e2 := complement( .RIGHT, *e1e3 );
-	print_expression_tree( cast(*Expression_Node)e2 );
-
-}
-
-{
-	init_dimension( 2 );
-	init_basis_one_elements( string.["e1","e2"] );
-
-	e2: K_Vector_Node;
-	e2.basis_components = 2;
-	e2.grade = 1;
-	e2.coefficient = 1;
-
-	e1 := complement( .RIGHT, *e2 );
-	print_expression_tree( cast(*Expression_Node)e1 );
-}
-
-{
-	init_dimension( 2 );
-	init_basis_one_elements( string.["e1","e2"] );
-
-	_e1: K_Vector_Node;
-	_e1.basis_components = 1;
-	_e1.grade = 1;
-	_e1.coefficient = 1;
-
-	_e2 := complement( .RIGHT, *_e1 );
-	print_expression_tree( cast(*Expression_Node)_e2 );
-}
-
-{
-	init_dimension( 4 );
-	init_basis_one_elements( string.["e1","e2","e3","e4"] );
-
-	e12: K_Vector_Node;
-	e12.basis_components = 3;
-	e12.grade = 2;
-	e12.coefficient = 1;
-
-	e34 := complement( .RIGHT, *e12 );
-	print_expression_tree( cast(*Expression_Node)e34 );
-}
-
-{
-
-	init_dimension( 4 );
-	init_basis_one_elements( string.["e1","e2","e3","e4"] );
-
-	e1: K_Vector_Node;
-	e1.basis_components = 1;
-	e1.grade = 1;
-	e1.coefficient = 1;
-
-	e234 := complement( .RIGHT, *e1 );
-	print_expression_tree( cast(*Expression_Node)e234 );
-}
-
-{
-
-	init_dimension( 4 );
-	init_basis_one_elements( string.["e1","e2","e3","e4"] );
-
-	e2: K_Vector_Node;
-	e2.basis_components = 2;
-	e2.grade = 1;
-	e2.coefficient = 1;
-
-	e134 := complement( .RIGHT, *e2 );
-	print_expression_tree( cast(*Expression_Node)e134 );
-}
-
-*/
-
-
-// THE FOLLOWING TWO SECTIONS ARE THE GENERATE-K-SPAN and GENERATE-K-COSPAN TESTS
-
-/*
-{
-	k_vector := New(K_Vector_Node);
-	k_vector.grade = 4;
-	for i: 0..3 {
-		k_vector.basis_components |= (1 << i);
-	}
-	print( "Basis components == %\n", k_vector.basis_components );
-
-	m_k_cospan: [..] K_Vector_Node;
-	m_k_element: K_Vector_Node;
-
-	k_span := generate_k_span( k_vector, 1 );
-	for i: 0..k_span.count-1 {
-		print( "(Grade,Coefficient,Basis-Components) == (%,%,%)\n", k_span[i].grade, k_span[i].coefficient, k_span[i].basis_components );
-	}
-	print( "\n" );
-
-	k_span = generate_k_span( k_vector, 2);
-	for i: 0..k_span.count-1 {
-		print( "(Grade,Coefficient,Basis-Components) == (%,%,%)\n", k_span[i].grade, k_span[i].coefficient, k_span[i].basis_components );
-	}
-	print( "\n" );
-	
-
-	k_span = generate_k_span( k_vector, 3); // this doesn't work in a 4-space,
-	for i: 0..k_span.count-1 {
-		print( "(Grade,Coefficient,Basis-Components) == (%,%,%)\n", k_span[i].grade, k_span[i].coefficient, k_span[i].basis_components );
-	}
-	print( "\n" );
-
-	// 1 2 4 8 
-	// 
-
-	print( "This is for the 4 span of the element\n" );
-	k_span = generate_k_span( k_vector, 4);
-	for i: 0..k_span.count-1 {
-		print( "(Grade,Coefficient,Basis-Components) == (%,%,%)\n", k_span[i].grade, k_span[i].coefficient, k_span[i].basis_components );
-	}
-	print( "\n" );
-}
-
-{
-	m_element := New(K_Vector_Node);
-	m_element.grade = 3;
-	m_element.basis_components |= (1 << 0); // e1
-	m_element.basis_components |= (1 << 2); // e3
-	m_element.basis_components |= (1 << 3); // e4
-
-	k_span   := generate_k_span( m_element, 1 );
-	k_cospan := generate_k_cospan( m_element, k_span );
-
-	print( "SPAN:\n" );
-	for i: 0..k_span.count-1 {
-		print( "(Grade,Coefficient,Basis-Components) == (%,%,%)\n", k_span[i].grade, k_span[i].coefficient, k_span[i].basis_components );
-	}
-	print( "\n" );
-
-	// the number of swaps doesn't look right, but we need to take a mental break i can feel it, time for a walk and X
-	print( "COSPAN:\n" );
-	for i: 0..k_span.count-1 {
-		print( "(Grade,Coefficient,Basis-Components) == (%,%,%)\n", k_cospan[i].grade, k_cospan[i].coefficient, k_cospan[i].basis_components );
-	}
-	print( "\n" );
-}
-*/
-
+// THESE SHOULD BE TESTS AS WELL!
 init_dimension( N = 4 );
 init_basis_one_elements( string.["e1","e2","e3","e4"] );
 
 expression: string = "e1";
-result: string = eval2( expression );
+result: string = eval( expression );
 print( "%\n", result );
 
+debug_print( expression );
+
 expression = "e2";
-result = eval2( expression );
+result = eval( expression );
 print( "%\n", result );
 
 expression = "e3";
-result = eval2( expression );
+result = eval( expression );
 print( "%\n", result );
 
 expression = "e4";
-result = eval2( expression );
+result = eval( expression );
 print( "%\n", result );
 
 expression = "e1^e2";
-result = eval2( expression );
+result = eval( expression );
 print( "%\n", result );
 
 expression = "e1^e1";  // this is zero and not sure we represent that at all since we don't have coefficients
-result = eval2( expression );
+result = eval( expression );
 print( "%\n", result );
 
 expression = "e1+e2";  // this is zero and not sure we represent that at all since we don't have coefficients
-result = eval2( expression );
+result = eval( expression );
 print( "%\n", result );
 
 expression = "e1+e2+e3";  // this is zero and not sure we represent that at all since we don't have coefficients
-result = eval2( expression );
+result = eval( expression );
 print( "%\n", result );
 
 expression = "e1^(e1+e2)";  // printing 1 in there but oh well
-result = eval2( expression );
+result = eval( expression );
 print( "%\n", result );
 
 expression = "LC(e1)"; 
-result = eval2( expression );
+result = eval( expression );
 print( "%\n", result );
 
 expression = "RC(e1)"; 
-result = eval2( expression );
+result = eval( expression );
 print( "%\n", result );
 
 expression = "(e2^e3)R(e1^e3^e4)";  // cool it works but we still have the 'zero' problem
-result = eval2( expression );
+result = eval( expression );
 print( "%\n", result );
 
 
@@ -1699,60 +1390,7 @@ print( "%\n", result );
 
 
 
-/*
-// THE FOLLOWING SECTIONS ARE FOR TESTING THE EXPANSION OF THE COMMON FACTOR THEOREM
-{
-	// the problem is in partial eval, i need to reevaluate how i want that to work at all
-	// we should just call eval and let the chips lie where they may
-	// you just happen to eval from that point
-	// eval shouldn't come across any regressive products at that point in the tree, so it SHOULD be safe!!!
-
-	test( dimension = 4, basis = string.["e1","e2","e3","e4"], expression = "(e2^e3)R(e1^e3^e4)" );	
-}
-
-
-// THIS IS THE ORIGINAL TESTING OF THE TOP-LEVEL FUNCTIONS
-	test( dimension = 5, basis = string.["e1","e2","e3","e4","e5"], expression = "(e1^e2^e3)+(e2^e3^e4)+(e1^e4^e5)" );
-
-	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "3" );
-	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "3^3" ); // the sum might be broken, that's okay though
-	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "e1^e2" );
-	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "3+3" );
-	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "3+3+3" );
 	
-	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "e2^e1" );
-	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "e1^(e1+e2)" );
-	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "(e1+e2)^(e1+e2)" );
-
-	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "e1 + e2 + e1" );
-
-	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "3+e1+3" );
-	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "e1^(e1+e2+e3)" );
-	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "(e1+e2)^(e1+e2+e3)" );
-
-	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "3" );
-	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "-3" );
-	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "3^5" );
-	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "-3^-5" );
-	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "3^e1" );
-	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "-3^e1" );
-	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "e1^e1" );
-	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "e1^e2" );	
-	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "(e1^e2)" );
-	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "(e1^e2)^e3" );
-	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "e1^e2^e3" );
-	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "(3^e1)^(4^e2)" );	
-	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "e1+e1" );
-	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "e1-e1" );
-	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "e1+e2+e1" ); 
-
-	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "e1-2^e1" );
-	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "e1^e2+e1" );
-	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "e1^(e1+e2)" ); 
-	test( dimension = 3, basis = string.["e1","e2","e3"], expression = "(e1+e3)^(e1+e2)" ); 
-
-*/
-
 	return;
 }
 
