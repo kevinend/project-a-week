@@ -109,8 +109,8 @@ test_case: int = 0;
 // data structures:
 Node_Kind :: enum {
 	K_Vector;
-	Complement;  	 // left and right complements
-	Binary_Operator; // exterior, regressive, interior, sum, difference
+	Unary_Operator; 
+	Binary_Operator; 
 }
 
 Expression_Node :: struct {
@@ -127,28 +127,39 @@ K_Vector_Node :: struct {
 	basis_components: s64; // bit field, we won't hit dimension 64 so I think we are okay here for now
 }
 
-Complement_Variant :: enum {
-	 LEFT;
-	 RIGHT;
+Unary_Op :: enum {
+	 Negation;
+	 Left\_Complement;
+	 Right_Complement;
 }
 
-Complement_Node :: struct {
-
-	// left and right complement
+Unary_Operator_Node :: struct {
+	// negation, left and right complements
 	using _instance: Expression_Node;
 
-	variant:  Complement_Variant;
-	operand: *Expression_Node;
+	operation: Unary_Op;
+	operand:  *Expression_Node;
+}
+
+Binary_Op :: enum {
+	Sum;
+	Difference;
+	Exterior_Product;
+	Regressive_Product;
 }
 
 Binary_Operator_Node :: struct {
-
 	// exterior, regressive, and interior products, +, -, *, / (division just handled for scalars now even though grassman division is supported)
 	using _instance: Expression_Node;
 
 	operation: u8;
 	left_\operand: *Expression_Node;
 	right_operand: *Expression_Node;
+}
+
+Complement_Variant :: enum {
+	Left;
+	Right;
 }
 
 // procedures:
@@ -208,7 +219,7 @@ is_basis_one_element :: ( expression: string ) -> ( found_basis_element: bool, b
 	return found_basis_element, basis_element_index;
 }
 
-get_basis_one_element :: ( expression: string, basis_element_index: s64, is_negative: bool ) -> ( node: *Expression_Node, cursor: string ) {
+get_basis_one_element :: ( expression: string, basis_element_index: s64 ) -> ( node: *Expression_Node, cursor: string ) {
 
 	cursor := expression;
 
@@ -217,11 +228,9 @@ get_basis_one_element :: ( expression: string, basis_element_index: s64, is_nega
 	node := New(K_Vector_Node);
 	node.kind   	 = Node_Kind.K_Vector;
 	node.grade  	 = 1; 
+	node.coefficient = 1;
 	node.basis_components |= (1 << basis_element_index);
 
-	if is_negative { node.coefficient = -1; }
-	else           { node.coefficient =  1; }
-	
 	advance( *cursor, basis_one_element.count );
 
 	return cast(*Expression_Node)node, cursor;
@@ -311,7 +320,7 @@ parse_exterior_factor :: ( expression: string ) -> ( node: *Expression_Node, cur
 	is_basis_one_element, basis_element_index := is_basis_one_element( cursor );
 
 	if is_basis_one_element {
-		node, cursor = get_basis_one_element( cursor, basis_element_index, factor_is_negative );
+		node, cursor = get_basis_one_element( cursor, basis_element_index );
 	}
 	else
 	if is_digit( cursor[0] ) {
@@ -322,10 +331,8 @@ parse_exterior_factor :: ( expression: string ) -> ( node: *Expression_Node, cur
 		scalar_node := New(K_Vector_Node);
 		scalar_node.kind   	    = Node_Kind.K_Vector;
 		scalar_node.grade  	    = 0;
+		scalar_node.coefficient = value;
 
-		if factor_is_negative { scalar_node.coefficient = -value; }
-		else                  { scalar_node.coefficient =  value; }
-		
 		node = cast(*Expression_Node)scalar_node;
 	}
 	else
@@ -347,28 +354,48 @@ parse_exterior_factor :: ( expression: string ) -> ( node: *Expression_Node, cur
 		exit( -2 );
 	}
 
-	// TODO: if this works move the negation down here as well, you need to apply it as well
-	// We might want to move the negation down here as well honestly
-	// since -(e1+e2) is really -e1 + -e2 but we don't handle that case right now
-	if take_left_complement {
-		complement_node := New(Complement_Node);
-		complement_node.kind = Node_Kind.Complement;
-		complement_node.variant = Complement_Variant.LEFT;
-		complement_node.operand = node;
+	if factor_is_negative {
+		negation_node := New(Unary_Operator_Node);
+		init_unary_operator( negation_node, Unary_Op.Negation, node );
 
-		node = cast(*Expression_Node)complement_node;
+		node = cast(*Expression_Node)negation_node;
+	}
+
+	if take_left_complement {
+		left_complement_node := New(Unary_Operator_Node);
+		init_unary_operator( left_complement_node, Unary_Op.Left_Complement, node );
+
+		node = cast(*Expression_Node)left_complement_node;
 	}
 	else
 	if take_right_complement {
-		complement_node := New(Complement_Node);
-		complement_node.kind = Node_Kind.Complement;
-		complement_node.variant = Complement_Variant.RIGHT;
-		complement_node.operand = node;
+		right_complement_node := New(Unary_Operator_Node);
+		init_unary_operator( right_complement_node, Unary_Op.Right_Complement, node );
 
-		node = cast(*Expression_Node)complement_node;
+		node = cast(*Expression_Node)right_complement_node;
 	}
 
 	return node, cursor;
+}
+
+init_unary_operator :: ( node: *Unary_Operator_Node, operation: Unary_Op, operand: *Expression_Node ) {
+
+	node.kind      = Node_Kind.Unary_Operator;
+	node.operation = operation;
+	node.operand   = operand;
+
+	return;
+}
+
+init_binary_operator :: ( node: *Binary_Operator_Node, operation: Binary_Op, left: *Expression_Node, right: *Expression_Node ) {
+
+	node.kind 	   	   = Node_Kind.Binary_Operator;
+	node.operation 	   = operation;
+	node.left\_operand = left;
+	node.right_operand = right;
+
+	return;
+
 }
 
 // expression-tree:
@@ -425,13 +452,10 @@ clone_k_vector_node :: ( k_vector_node: *K_Vector_Node ) -> ( cloned_node: *K_Ve
 	return cloned_node;
 }
 
-clone_complement_node :: ( complement_node: *Complement_Node ) -> ( cloned_node: *Complement_Node ) {
+clone_unary_operator_node :: ( unary_operator_node: *Unary_Operator_Node ) -> ( cloned_node: *Unary_Operator_Node ) {
 
-	cloned_node 		 := New(Complement_Node);
-	cloned_node.kind 	  = Node_Kind.Complement;
-	cloned_node.variant   = complement_node.variant;
-	cloned_node.operand   = clone_node( complement_node.operand );
-
+	cloned_node := New(Unary_Operator_Node);
+	init_unary_operator( cloned_node, unary_operator_node.operation, clone_node( unary_operator_node.operand ) );
 	return cloned_node;
 }
 
@@ -452,8 +476,8 @@ clone_node :: ( node: *Expression_Node ) -> ( cloned_node: *Expression_Node ) {
 		return cast(*Expression_Node)clone_k_vector_node( cast(*K_Vector_Node)node );
 	}
 	else
-	if node.kind == Node_Kind.Complement {
-		return cast(*Expression_Node)clone_complement_node( cast(*Complement_Node)node );
+	if node.kind == Node_Kind.Unary_Operator {
+		return cast(*Expression_Node)clone_unary_operator_node( cast(*Unary_Operator_Node)node );
 	}
 	else
 	if node.kind == Node_Kind.Binary_Operator {
@@ -486,37 +510,35 @@ distribute_grassmann_products :: ( node: *Expression_Node ) -> ( tree: *Expressi
 		subtree = clone_node( node );	
 	}
 	else 
-	if node.kind == Node_Kind.Complement {
-	 	// might do the boolean thing again to reduce degree of nesting, this is wild
-		complement_node := cast(*Complement_Node)node;
-		if complement_node.operand.kind == Node_Kind.Binary_Operator {
-			binary_operator_node := cast(*Binary_Operator_Node)complement_node.operand;
+	if node.kind == Node_Kind.Unary_Operator {
+		unary_operator_node  := cast(*Unary_Operator_Node)node;
+
+		// determine whether we need to distribute the operator or not
+		need_to_distribute: bool = false;
+		if unary_operator_node.operand.kind == Node_Kind.Binary_Operator {
+			binary_operator_node := cast(*Binary_Operator_Node)unary_operator_node.operand;
 			if binary_operator_node.operation == #char "+" || binary_operator_node.operation == #char "-" {
-				// distribute the complement over each term in the sum or difference
-				new_binary_operator_node := New(Binary_Operator_Node);
+				need_to_distribute = true;
+			}
+		}
+
+		if need_to_distribute {
+			binary_operator_node := cast(*Binary_Operator_Node)unary_operator_node.operand;
+
+			new_binary_operator_node := New(Binary_Operator_Node);
 				
-				new_left\_node := New(Complement_Node); 
-				new_right_node := New(Complement_Node);
+			new_left\_node := New(Unary_Operator_Node); 
+			new_right_node := New(Unary_Operator_Node);
 
-				new_left_node.kind 	  = Node_Kind.Complement;
-				new_left_node.variant = complement_node.variant;
-				new_left_node.operand = clone_node( binary_operator_node.left_operand );
+			init_unary_operator( new_left\_node, unary_operator_node.operation, clone_node( binary_operator_node.left\_operand ) );
+			init_unary_operator( new_right_node, unary_operator_node.operation, clone_node( binary_operator_node.right_operand ) );
 
-				new_right_node.kind	   = Node_Kind.Complement;
-				new_right_node.variant = complement_node.variant;
-				new_right_node.operand = clone_node( binary_operator_node.right_operand );
+			new_binary_operator_node.kind      = Node_Kind.Binary_Operator;
+			new_binary_operator_node.operation = binary_operator_node.operation;
+			new_binary_operator_node.left\_operand = distribute_grassmann_products( cast(*Expression_Node)new_left\_node );
+			new_binary_operator_node.right_operand = distribute_grassmann_products( cast(*Expression_Node)new_right_node );
 
-
-				new_binary_operator_node.kind      = Node_Kind.Binary_Operator;
-				new_binary_operator_node.operation = binary_operator_node.operation;
-				new_binary_operator_node.left\_operand = distribute_grassmann_products( cast(*Expression_Node)new_left\_node );
-				new_binary_operator_node.right_operand = distribute_grassmann_products( cast(*Expression_Node)new_right_node );
-
-				subtree = cast(*Expression_Node)new_binary_operator_node;
-			}
-			else {
-				subtree = clone_node( node );
-			}
+			subtree = cast(*Expression_Node)new_binary_operator_node;
 		}
 		else {
 			subtree = clone_node( node );
@@ -748,10 +770,23 @@ simplify :: ( node: *Expression_Node ) -> ( result: *Expression_Node ) {
 		result = clone_node( node );
 	}
 	else
-	if node.kind == Node_Kind.Complement {
-		complement_node := cast(*Complement_Node)node;
-		arg   := cast(*K_Vector_Node)complement_node.operand;
-		result = cast(*Expression_Node)complement( complement_node.variant, arg );
+	if node.kind == Node_Kind.Unary_Operator {
+		// this is running post distribution, so we should know that the arg is a k-vetor node
+		unary_operator_node := cast(*Unary_Operator_Node)node;
+		operand := cast(*K_Vector_Node)unary_operator_node.operand;
+
+		if unary_operator_node.operation == Unary_Op.Left_Complement {
+			result = cast(*Expression_Node)complement( Complement_Variant.Left, operand );
+		}
+		else
+		if unary_operator_node.operation == Unary_Op.Right_Complement {
+			result = cast(*Expression_Node)complement( Complement_Variant.Right, operand );
+		}
+		else 
+		if unary_operator_node.operation == Unary_Op.Negation {
+			operand.coefficient *= -1;
+			result = cast(*Expression_Node)clone_k_vector_node( operand );
+		}
 	}
 	else {
 		binary_operator_node := cast(*Binary_Operator_Node)node;
@@ -915,11 +950,11 @@ complement :: ( variant: Complement_Variant, k_vector: *K_Vector_Node ) -> ( n_k
 	// of swaps required to build the final N element from the product of the (n-k)-element or the k-element
 	// or vice versa depending on whether this is a left or right complement.
 
-	if variant == Complement_Variant.LEFT {
+	if variant == Complement_Variant.Left {
 		n_k_vector.coefficient *= anticommutative_coefficient( n_k_vector, k_vector );
 	} 
 	else
-	if variant == Complement_Variant.RIGHT {
+	if variant == Complement_Variant.Right {
 		n_k_vector.coefficient *= anticommutative_coefficient( k_vector, n_k_vector );
 	}
 
@@ -1118,14 +1153,16 @@ debug_print :: ( expression: string ) {
 			print( "%\n", k_vector_as_string );
 		}
 		else 
-		if node.kind == Node_Kind.Complement { // this might need flipped back to unary operator
+		if node.kind == Node_Kind.Unary_Operator {
+			unary_operator_node := cast(*Unary_Operator_Node)node;
 			
-			complement := cast(*Complement_Node)node;
-			if complement.variant == {
-				case .LEFT;  { print( "LC\n" ); }
-				case .RIGHT; { print( "RC\n" ); }
+			if unary_operator_node.operation == {
+				case .Negation; 		{ print( "-\n"  ); }
+				case .Left\_Complement; { print( "LC\n" ); }
+				case .Right_Complement; { print( "RC\n" ); }
 			}
-			print_expression_tree( complement.operand, indent + 2 );
+
+			print_expression_tree( unary_operator_node.operand, indent + 2 );
 		}
 		else 
 		if node.kind == Node_Kind.Binary_Operator {
@@ -1164,6 +1201,8 @@ debug_print :: ( expression: string ) {
 	print( "Expression tree post application of the common factor theorem:\n" );
 	print_expression_tree( expression_tree );
 	print( "\n" );
+
+	expression_tree = simplify( expression_tree );
 
 	elements: [..] K_Vector_Node;
 	elements = flatten( expression_tree );
@@ -1270,18 +1309,30 @@ main :: () {
 init_dimension( N = 4 );
 init_basis_one_elements( string.["e1","e2","e3","e4"] );
 
+expression: string = "-e1";
+result: string = eval( expression );
+print( "%\n", result );
+
+debug_print( expression );
+
+
+/*
+
 expression: string = "e1";
 result: string = eval( expression );
 print( "%\n", result );
 
 debug_print( expression );
 
-/*
-print( "Problem child!\n" );
+expression = "-e1";
+result = eval( expression );
+print( "%\n", result );
+
+debug_print( expression );
+
 expression = "-(e1+e2)";
 result = eval( expression );
 print( "%\n", result );
-*/
 
 expression = "e2";
 result = eval( expression );
@@ -1327,16 +1378,8 @@ expression = "(e2^e3)R(e1^e3^e4)";  // cool it works but we still have the 'zero
 result = eval( expression );
 print( "%\n", result );
 
+*/
 
-
-
-
-
-
-
-
-
-	
 	return;
 }
 
