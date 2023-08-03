@@ -85,8 +85,10 @@
 	TODO:
 	xxx--Complement, need LC and RC that preceed terms, needs added to the distribution since LC(e1+e2) == LC(e1) + LC(e2)
 	xxx--Replace eval with simplify and have eval call simplify at the root of the tree
-	--Negation doesn't work like i think it does, it only negates k-vectors and not sums so something like -(e1+e2) doesn't work, just haven't tested it yet which is why i don't know about it
-	  Need to create the Unary_Operator which is either complements or negation
+	xxx--Negation doesn't work like i think it does, it only negates k-vectors and not sums so something like -(e1+e2) doesn't work, just haven't tested it yet which is why i don't know about it
+	xxx--Need to create the Unary_Operator which is either complements or negation
+	--How to handle zero? If the answer is only zero then display otherwise exclude it from the output (i think), need this before writing the tests
+	--Clean up test cases
 	--Convert differences to sums (not sure this is possible)
 	--Tokenizer for the front-end (required to do the symbol lookup)
 	--Symbol table so you can stash values, say you have a point P = e0 + e1 + e2, want to store that for reuse (then you have an interpreter effectively)
@@ -101,7 +103,7 @@
 
 // globals:
 dimension: int = 0;
-basis_one_elements: 	[..] string;
+basis_one_elements: [..] string;
 n_element: int;
 
 test_case: int = 0;
@@ -535,10 +537,12 @@ distribute_grassmann_products :: ( node: *Expression_Node ) -> ( tree: *Expressi
 			init_unary_operator( new_left\_node, unary_operator.operation, clone_node( binary_operator.left\_operand ) );
 			init_unary_operator( new_right_node, unary_operator.operation, clone_node( binary_operator.right_operand ) );
 
-			new_binary_operator.kind      = Node_Kind.Binary_Operator;
-			new_binary_operator.operation = binary_operator.operation;
-			new_binary_operator.left\_operand = distribute_grassmann_products( cast(*Expression_Node)new_left\_node );
-			new_binary_operator.right_operand = distribute_grassmann_products( cast(*Expression_Node)new_right_node );
+			init_binary_operator(
+				 new_binary_operator
+				,binary_operator.operation
+				,distribute_grassmann_products( cast(*Expression_Node)new_left\_node )
+				,distribute_grassmann_products( cast(*Expression_Node)new_right_node )
+			);
 
 			subtree = cast(*Expression_Node)new_binary_operator;
 		}
@@ -547,7 +551,7 @@ distribute_grassmann_products :: ( node: *Expression_Node ) -> ( tree: *Expressi
 		}
 	}	
 	else {
-		// Determine whether we need to distribute the grassmann products over any sums or differences.
+		// Determine whether we need to distribute the binary grassmann products over any sums or differences.
 		// The boolean values are introduced to reduce the level of nesting that happens if you don't 
 		// do it that way (it was very hard to visually parse and a lot of duplicate 'clone the current node because
 		// we don't need to distribute')
@@ -575,8 +579,8 @@ distribute_grassmann_products :: ( node: *Expression_Node ) -> ( tree: *Expressi
 		}
 
 		if distribute_over_left_operand {
-			// distribute the argument on the right over the argument on the right
-			distributive_operator    := binary_operator.operation;
+			// distribute the argument on the left over the argument on the right
+			grassmann_operator       := binary_operator.operation;
 			distribute_over_operator := left_operator.operation;
 
 			new_binary_operator := New(Binary_Operator_Node);
@@ -584,27 +588,34 @@ distribute_grassmann_products :: ( node: *Expression_Node ) -> ( tree: *Expressi
 			new_left\_node := New(Binary_Operator_Node);
 			new_right_node := New(Binary_Operator_Node);
 
-			new_left_node.kind           = Node_Kind.Binary_Operator;
-			new_left_node.operation 	 = distributive_operator;
-			new_left_node.left_operand   = clone_node( cast(*Expression_Node)left_operator.left_operand );
-			new_left_node.right_operand  = clone_node( cast(*Expression_Node)binary_operator.right_operand );
+			init_binary_operator(
+				 new_left_node
+				,grassmann_operator
+				,clone_node( cast(*Expression_Node)left_operator.left_operand )
+				,clone_node( cast(*Expression_Node)binary_operator.right_operand )
+			);
 
-			new_right_node.kind          = Node_Kind.Binary_Operator;
-			new_right_node.operation 	 = distributive_operator;
-			new_right_node.left_operand  = clone_node( cast(*Expression_Node) left_operator.right_operand ); 
-			new_right_node.right_operand = clone_node( cast(*Expression_Node) binary_operator.right_operand );
+			init_binary_operator(
+				 new_right_node
+				,grassmann_operator
+				,clone_node( cast(*Expression_Node)left_operator.right_operand )
+				,clone_node( cast(*Expression_Node)binary_operator.right_operand )
+			);
 
-			new_binary_operator.kind          = Node_Kind.Binary_Operator;
-			new_binary_operator.operation     = distribute_over_operator; // + or -
-			new_binary_operator.left\_operand = distribute_grassmann_products( cast(*Expression_Node)new_left\_node );
-			new_binary_operator.right_operand = distribute_grassmann_products( cast(*Expression_Node)new_right_node );
+			// to fully expand the subtrees we need to recursively call this procedure against the new left and right subtrees
+			init_binary_operator(
+				 new_binary_operator
+				,distribute_over_operator // sum or difference
+				,distribute_grassmann_products( cast(*Expression_Node)new_left\_node )
+				,distribute_grassmann_products( cast(*Expression_Node)new_right_node )
+			);
 
 			subtree = cast(*Expression_Node)new_binary_operator;
 		}
 		else
 		if distribute_over_right_operand {
 			// distribute the argument on the left over the argument on the right
-			distributive_operator    := binary_operator.operation;
+			grassmann_operator    	 := binary_operator.operation;
 			distribute_over_operator := right_operator.operation;
 
 			new_binary_operator := New(Binary_Operator_Node);
@@ -612,20 +623,27 @@ distribute_grassmann_products :: ( node: *Expression_Node ) -> ( tree: *Expressi
 			new_\left_node := New(Binary_Operator_Node);
 			new_right_node := New(Binary_Operator_Node);
 
-			new_left_node.kind           = Node_Kind.Binary_Operator;
-			new_left_node.operation 	 = distributive_operator;
-			new_left_node.left_operand   = clone_node( cast(*Expression_Node)binary_operator.left_operand );
-			new_left_node.right_operand  = clone_node( cast(*Expression_Node)right_operator.left_operand );
+			init_binary_operator(
+				 new_left_node
+				,grassmann_operator
+				,clone_node( cast(*Expression_Node)binary_operator.left_operand )
+				,clone_node( cast(*Expression_Node)right_operator.left_operand )
+			);
 
-			new_right_node.kind          = Node_Kind.Binary_Operator;
-			new_right_node.operation 	 = distributive_operator;
-			new_right_node.left_operand  = clone_node( cast(*Expression_Node)binary_operator.left_operand );
-			new_right_node.right_operand = clone_node( cast(*Expression_Node)right_operator.right_operand );
-			
-			new_binary_operator.kind          = Node_Kind.Binary_Operator;
-			new_binary_operator.operation     = distribute_over_operator; // + or -
-			new_binary_operator.left\_operand = distribute_grassmann_products( cast(*Expression_Node)new_left\_node );
-			new_binary_operator.right_operand = distribute_grassmann_products( cast(*Expression_Node)new_right_node );
+			init_binary_operator(
+				 new_right_node
+				,grassmann_operator
+				,clone_node( cast(*Expression_Node)binary_operator.left_operand )
+				,clone_node( cast(*Expression_Node)right_operator.right_operand )
+			);
+
+			// to fully expand the subtrees we need to recursively call this procedure against the new left and right subtrees
+			init_binary_operator(
+				 new_binary_operator
+				,distribute_over_operator // sum or difference
+				,distribute_grassmann_products( cast(*Expression_Node)new_left\_node )
+				,distribute_grassmann_products( cast(*Expression_Node)new_right_node )
+			);
 
 			subtree = cast(*Expression_Node)new_binary_operator;
 		}
@@ -822,7 +840,7 @@ simplify :: ( node: *Expression_Node ) -> ( result: *Expression_Node ) {
 			}
 		}
 		else {
-			// one node is a sum and we can't simplify it further, just clone the node
+			// Clone the node. One node is a sum and we can't simplify it further.
 			result = clone_node( node );
 		}
 	}
@@ -872,19 +890,22 @@ apply_common_factor_theorem :: ( node: *Expression_Node ) -> ( tree: *Expression
 
 				regressive_product_subtrees: [..] *Binary_Operator_Node;
 				for i: 0..k_span.count-1 {
-
-					regressive_product_node := New(Binary_Operator_Node);
-					regressive_product_node.kind = Node_Kind.Binary_Operator;
-					regressive_product_node.operation = .Regressive_Product;
 				
 					exterior_product_node := New(Binary_Operator_Node);
-					exterior_product_node.kind = Node_Kind.Binary_Operator;
-					exterior_product_node.operation = .Exterior_Product;
-					exterior_product_node.left\_operand = cast(*Expression_Node)clone_k_vector_node( left ); 
-					exterior_product_node.right_operand = cast(*Expression_Node)k_cospan[i];
+					init_binary_operator( 
+						 exterior_product_node
+						,.Exterior_Product
+						,cast(*Expression_Node)clone_k_vector_node( left )
+						,cast(*Expression_Node)k_cospan[i] 
+					);
 
-					regressive_product_node.left\_operand = cast(*Expression_Node)exterior_product_node;
-					regressive_product_node.right_operand = cast(*Expression_Node)k_span[i];
+					regressive_product_node := New(Binary_Operator_Node);
+					init_binary_operator(
+						 regressive_product_node
+						,.Regressive_Product
+						,cast(*Expression_Node)exterior_product_node
+						,cast(*Expression_Node)k_span[i]
+					);
 
 					array_add( *regressive_product_subtrees, regressive_product_node );
 				}
@@ -904,8 +925,7 @@ apply_common_factor_theorem :: ( node: *Expression_Node ) -> ( tree: *Expression
 				else {
 
 					root := New(Binary_Operator_Node);
-					root.kind = Node_Kind.Binary_Operator;
-					root.operation = .Sum;
+					init_binary_operator( root, .Sum, null, null );
 					
 					i: int = 0;
 					current := root;
@@ -913,8 +933,7 @@ apply_common_factor_theorem :: ( node: *Expression_Node ) -> ( tree: *Expression
 						current.left_operand = cast(*Expression_Node)regressive_product_subtrees[i];
 						
 						next := New(Binary_Operator_Node);
-						next.kind 	   = Node_Kind.Binary_Operator;
-						next.operation = .Sum;
+						init_binary_operator( next, .Sum, null, null );
 
 						current.right_operand = cast(*Expression_Node)next;
 						current = next;
