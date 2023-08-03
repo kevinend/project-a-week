@@ -88,7 +88,7 @@
 	xxx--Negation doesn't work like i think it does, it only negates k-vectors and not sums so something like -(e1+e2) doesn't work, just haven't tested it yet which is why i don't know about it
 	xxx--Need to create the Unary_Operator which is either complements or negation
 	xxx--How to handle zero? If the answer is only zero then display otherwise exclude it from the output (i think), need this before writing the tests [filtered when flattening, removed zeroes]
-	--Need an init_k_element( grade, coefficient, basis )
+	xxx--Need an init_k_element( grade, coefficient, basis )
 	--Clean up test cases
 	--Convert differences to sums (not sure this is possible)
 	--Tokenizer for the front-end (required to do the symbol lookup)
@@ -125,8 +125,8 @@ K_Vector_Node :: struct {
 	// scalar, vector, bivector, trivector, ... , n-vector
 	using _instance: Expression_Node;
 
-	coefficient: float;
 	grade: int;
+	coefficient: float;
 	basis_components: s64; // bit field, we won't hit dimension 64 so I think we are okay here for now
 }
 
@@ -182,6 +182,16 @@ init_binary_operator :: ( node: *Binary_Operator_Node, operation: Binary_Op, lef
 	node.operation 	   = operation;
 	node.left\_operand = left;
 	node.right_operand = right;
+
+	return;
+}
+
+init_k_element :: ( node: *K_Vector_Node, grade: int, coefficient: float, basis_components: s64 ) {
+
+	node.kind  		 	  = Node_Kind.K_Vector;
+	node.grade 		 	  = grade;
+	node.coefficient 	  = coefficient;
+	node.basis_components = basis_components;
 
 	return;
 }
@@ -353,9 +363,7 @@ parse_exterior_factor :: ( expression: string ) -> ( node: *Expression_Node, cur
 		value, success, cursor = string_to_float( cursor );
 
 		scalar_node := New(K_Vector_Node);
-		scalar_node.kind   	    = Node_Kind.K_Vector;
-		scalar_node.grade  	    = 0;
-		scalar_node.coefficient = value;
+		init_k_element( scalar_node, grade = 0, coefficient = value, basis_components = 0 );
 
 		node = cast(*Expression_Node)scalar_node;
 	}
@@ -445,13 +453,17 @@ init_basis_one_elements :: ( one_element_symbols: [] string ) {
 	return;
 }
 
-clone_k_vector_node :: ( k_vector_node: *K_Vector_Node ) -> ( cloned_node: *K_Vector_Node ) {
+clone_k_vector :: ( k_vector: *K_Vector_Node ) -> ( cloned_node: *K_Vector_Node ) {
 
 	cloned_node := New(K_Vector_Node);
+	init_k_element( cloned_node, k_vector.grade, k_vector.coefficient, k_vector.basis_components );
+
+	/*
 	cloned_node.kind  			 = Node_Kind.K_Vector;
 	cloned_node.grade 			 = k_vector_node.grade;
 	cloned_node.coefficient 	 = k_vector_node.coefficient;
 	cloned_node.basis_components = k_vector_node.basis_components;
+	*/
 
 	return cloned_node;
 }
@@ -479,7 +491,7 @@ clone_binary_operator :: ( binary_operator: *Binary_Operator_Node ) -> ( cloned_
 clone_node :: ( node: *Expression_Node ) -> ( cloned_node: *Expression_Node ) {
 		
 	if node.kind == Node_Kind.K_Vector {
-		return cast(*Expression_Node)clone_k_vector_node( cast(*K_Vector_Node)node );
+		return cast(*Expression_Node)clone_k_vector( cast(*K_Vector_Node)node );
 	}
 	else
 	if node.kind == Node_Kind.Unary_Operator {
@@ -668,15 +680,13 @@ generate_k_span   :: ( element: *K_Vector_Node, k: int ) -> ( k_span: [..] *K_Ve
 	}
 
 	k_span: [..] *K_Vector_Node;
-	k_element     := New(K_Vector_Node);
-	k_element.kind = Node_Kind.K_Vector;
+	k_element := New(K_Vector_Node);
 	if k == 1 {
 		for i: 0..one_span.count-1 {
-			k_element.grade 	  = 1;
-			k_element.coefficient = 1;
-			k_element.basis_components |= (1 << one_span[i]);
 
-			array_add( *k_span, clone_k_vector_node( k_element ) );
+			init_k_element( k_element, grade = 1, coefficient = 1, basis_components = (1 << one_span[i]) );
+
+			array_add( *k_span, clone_k_vector( k_element ) );
 
 			k_element.basis_components &= 0; // reset/clear bits
 		}
@@ -687,12 +697,10 @@ generate_k_span   :: ( element: *K_Vector_Node, k: int ) -> ( k_span: [..] *K_Ve
 		one_element := New(K_Vector_Node);
 		for i: 0..one_span.count-1 {
 
-			one_element.grade = 1;
-			one_element.coefficient = 1;
 			one_element.basis_components &= 0;
-			one_element.basis_components |= (1 << one_span[i]);
-			
-			k_element := clone_k_vector_node( one_element );
+			init_k_element( one_element, grade = 1, coefficient = 1, basis_components = (1 << one_span[i]) );
+
+			k_element := clone_k_vector( one_element );
 
 			for j: i+1..one_span.count-1 {
 
@@ -708,7 +716,7 @@ generate_k_span   :: ( element: *K_Vector_Node, k: int ) -> ( k_span: [..] *K_Ve
 
 					array_add( *k_span, k_element );
 
-					k_element = clone_k_vector_node( one_element );
+					k_element = clone_k_vector( one_element );
 				}
 			}
 		}
@@ -763,10 +771,12 @@ generate_k_cospan :: ( m_element: *K_Vector_Node, k_span: [..] *K_Vector_Node ) 
 		// similar to the 'complement' however this is with respect to an m-element instead of the basis n-element.
 		
 		m_k_element := New(K_Vector_Node);
-		m_k_element.kind  		= Node_Kind.K_Vector;
-		m_k_element.grade 		= m_element.grade - k_element.grade;
-		m_k_element.coefficient = 1;
-		m_k_element.basis_components = m_element.basis_components ^ k_element.basis_components;
+		init_k_element( 
+			 m_k_element
+			,grade = m_element.grade - k_element.grade
+			,coefficient = 1
+			,basis_components = m_element.basis_components ^ k_element.basis_components 
+		);
 
 		m_k_element.coefficient *= anticommutative_coefficient( k_element, m_k_element );
 
@@ -807,7 +817,7 @@ simplify :: ( node: *Expression_Node ) -> ( result: *Expression_Node ) {
 		else 
 		if unary_operator.operation == .Negation {
 			operand.coefficient *= -1;
-			result = cast(*Expression_Node)clone_k_vector_node( operand );
+			result = cast(*Expression_Node)clone_k_vector( operand );
 		}
 	}
 	else {
@@ -830,7 +840,7 @@ simplify :: ( node: *Expression_Node ) -> ( result: *Expression_Node ) {
 			else 
 			if operation == .Sum || operation == .Difference {
 				if left.grade == right.grade && left.basis_components == right.basis_components {
-					sum := clone_k_vector_node( left );
+					sum := clone_k_vector( left );
 					if operation == .Difference { right.coefficient *= -1; } // part of expand could be converting differences into sums
 					sum.coefficient += right.coefficient;
 					result = cast(*Expression_Node)sum;
@@ -897,7 +907,7 @@ apply_common_factor_theorem :: ( node: *Expression_Node ) -> ( tree: *Expression
 					init_binary_operator( 
 						 exterior_product_node
 						,.Exterior_Product
-						,cast(*Expression_Node)clone_k_vector_node( left )
+						,cast(*Expression_Node)clone_k_vector( left )
 						,cast(*Expression_Node)k_cospan[i] 
 					);
 
@@ -963,10 +973,12 @@ apply_common_factor_theorem :: ( node: *Expression_Node ) -> ( tree: *Expression
 complement :: ( variant: Complement_Variant, k_vector: *K_Vector_Node ) -> ( n_k_vector: *K_Vector_Node ) {
 	
 	n_k_vector := New(K_Vector_Node);
-	n_k_vector.kind             =  Node_Kind.K_Vector;
-	n_k_vector.grade 	    	=  dimension - k_vector.grade;
-	n_k_vector.coefficient 	 	=  k_vector.coefficient;
-	n_k_vector.basis_components =  k_vector.basis_components ^ n_element; // XOR
+	init_k_element(
+		 n_k_vector
+		,grade 		 	  = dimension - k_vector.grade
+		,coefficient 	  = k_vector.coefficient
+		,basis_components = n_element ^ k_vector.basis_components
+	);
 
 	// Need to determine whether the (n-k)-element should be negated.
 	// The procedure below effectively takes the exterior product between the args and determines the number
@@ -987,11 +999,8 @@ complement :: ( variant: Complement_Variant, k_vector: *K_Vector_Node ) -> ( n_k
 exterior_product :: ( lvalue: *K_Vector_Node, rvalue: *K_Vector_Node ) -> ( result: *K_Vector_Node ) {
 
 	// assume the result is zero, change it if it isn't the case
-	result 		:= New(K_Vector_Node);
-	result.kind  = Node_Kind.K_Vector;
-	result.coefficient      = 0;
-	result.grade 			= 0;
-	result.basis_components = 0;
+	result:= New(K_Vector_Node);
+	init_k_element( result, grade = 0, coefficient = 0, basis_components = 0 );
 
 	if lvalue.grade == 0 || rvalue.grade == 0 {
 		result.grade       	    = lvalue.grade + rvalue.grade;
@@ -999,8 +1008,7 @@ exterior_product :: ( lvalue: *K_Vector_Node, rvalue: *K_Vector_Node ) -> ( resu
 		result.basis_components = lvalue.basis_components | rvalue.basis_components;
 	}
 	else
-	if (lvalue.basis_components & rvalue.basis_components) == 0 { // no one elements in common; implies sum of grades is less than or equal to N
-		
+	if (lvalue.basis_components & rvalue.basis_components) == 0 { // no one elements in common; implies sum of grades is less than or equal to N	
 		result.grade 			= lvalue.grade + rvalue.grade;
 		result.coefficient  	= lvalue.coefficient * rvalue.coefficient;
 		result.basis_components = lvalue.basis_components | rvalue.basis_components;
@@ -1014,11 +1022,8 @@ exterior_product :: ( lvalue: *K_Vector_Node, rvalue: *K_Vector_Node ) -> ( resu
 regressive_product :: ( lvalue: *K_Vector_Node, rvalue: *K_Vector_Node ) -> ( result: *K_Vector_Node ) {
 
 	// assume the result is zero, change it if it isn't the case
-	result      := New(K_Vector_Node);
-	result.kind  = Node_Kind.K_Vector;
-	result.basis_components = 0;
-	result.grade 			= 0;
-	result.coefficient      = 0;
+	result := New(K_Vector_Node);
+	init_k_element( result, grade = 0, coefficient = 0, basis_components = 0 );
 
 	if lvalue.grade == dimension {
 		// return the right-operand 
@@ -1049,10 +1054,7 @@ flatten :: ( subtree: *Expression_Node ) -> ( elements: [..] K_Vector_Node ) {
 			k_vector_node := cast(*K_Vector_Node)node;
 
 			k_vector: K_Vector_Node;
-			k_vector.kind 		 	  = Node_Kind.K_Vector;
-			k_vector.coefficient 	  = k_vector_node.coefficient;
-			k_vector.grade       	  = k_vector_node.grade;
-			k_vector.basis_components = k_vector_node.basis_components;
+			init_k_element( *k_vector, k_vector_node.grade, k_vector_node.coefficient, k_vector_node.basis_components );
 
 			if k_vector_node.coefficient != 0 {  // float-compare
 				array_add( elements, k_vector );	
@@ -1350,6 +1352,14 @@ main :: () {
 
 	debug_print( expression );
 
+	expression = "3";
+	result = eval( expression );
+	print( "%\n", result );
+
+	expression = "3^3";
+	result = eval( expression );
+	print( "%\n", result );
+
 	expression = "-e1";
 	result = eval( expression );
 	print( "%\n", result );
@@ -1401,6 +1411,8 @@ main :: () {
 	expression = "(e2^e3)R(e1^e3^e4)";  // cool it works but we still have the 'zero' problem
 	result = eval( expression );
 	print( "%\n", result );
+
+	debug_print( expression );
 
 	return;
 }
