@@ -89,8 +89,8 @@
 	xxx--Need to create the Unary_Operator which is either complements or negation
 	xxx--How to handle zero? If the answer is only zero then display otherwise exclude it from the output (i think), need this before writing the tests [filtered when flattening, removed zeroes]
 	xxx--Need an init_k_element( grade, coefficient, basis )
+	xxx--Pretty print the final expression for the test cases
 	--Clean up test cases
-	--Convert differences to sums (not sure this is possible)
 	--Tokenizer for the front-end (required to do the symbol lookup)
 	--Symbol table so you can stash values, say you have a point P = e0 + e1 + e2, want to store that for reuse (then you have an interpreter effectively)
 	--DeMorgan's Law, I ALWAYS forget this and it's impossible to remember
@@ -98,6 +98,7 @@
 	--Less important but a stepwise expand, allow the user to click through and generate a string of the current state to see
 	  how the process is working
 	--Convert 'k-vector' into 'k-element' since we could have point spaces
+
 */
 
 #scope_export
@@ -1100,14 +1101,23 @@ sort :: ( elements: *[] K_Vector_Node ) {
 	return;
 }
 
-k_element_to_string ::  ( k_element: K_Vector_Node ) -> ( result: string ) {
+k_element_to_string ::  ( k_element: K_Vector_Node, pretty_coefficients: bool = false ) -> ( result: string ) {
 
 	builder: String_Builder;
 	num_processed_basis_one_elements: int = 0;
 
 	coefficient: string; 
-	coefficient = tprint( "%", k_element.coefficient );
-	append( *builder, coefficient );
+	if pretty_coefficients {
+		if k_element.coefficient != 1.0 && k_element.coefficient != -1.0 {
+			if k_element.coefficient < 0 { coefficient = tprint( "%", k_element.coefficient * -1 ); }
+			else					     { coefficient = tprint( "%", k_element.coefficient ); }
+		}
+		append( *builder, coefficient );
+	}
+	else {
+		coefficient = tprint( "%", k_element.coefficient ); 
+		append( *builder, coefficient );
+	}
 
 	for i: 0..dimension-1 {
 		if k_element.basis_components & (1 << i) {
@@ -1132,23 +1142,26 @@ elements_to_expression :: ( elements: [] K_Vector_Node ) -> ( expression: string
 	// The 'flatten' procedure filters out zero k-elements.
 	// If the tree was either a single zero element or the sum of zero elements our list of elements is empty.
 	// In that case we print a single zero.
-	
+
 	expression_builder: String_Builder;
 
 	if elements.count == 0 {
 		append( *expression_builder, "0" );
 	}
 	else {
-		i := 0;
-		while i < elements.count-1 {
-			append( *expression_builder, k_element_to_string( elements[i] ) );
-			append( *expression_builder, "+" );	
-			i += 1;
+		if elements[0].coefficient < 0 {
+			append( *expression_builder, "-" );
 		}
-		append( *expression_builder, k_element_to_string( elements[i] ) );
+		append( *expression_builder, k_element_to_string( elements[0], pretty_coefficients = true ) );
+
+		for i: 1..elements.count-1 {
+			if elements[i].coefficient < 0 { append( *expression_builder, " - " ); }
+			else  						   { append( *expression_builder, " + " ); }
+			append( *expression_builder, k_element_to_string( elements[i], pretty_coefficients = true ) );
+		}
 	}
-		
-	// TODO: Memory Leak! How do you free the builder mememory???
+	
+	// TODO: Free builder, leaking memory...
 	expression: string = builder_to_string( *expression_builder );
 
 	return expression;
