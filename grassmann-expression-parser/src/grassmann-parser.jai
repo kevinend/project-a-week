@@ -87,7 +87,8 @@
 	xxx--Replace eval with simplify and have eval call simplify at the root of the tree
 	xxx--Negation doesn't work like i think it does, it only negates k-vectors and not sums so something like -(e1+e2) doesn't work, just haven't tested it yet which is why i don't know about it
 	xxx--Need to create the Unary_Operator which is either complements or negation
-	--How to handle zero? If the answer is only zero then display otherwise exclude it from the output (i think), need this before writing the tests
+	xxx--How to handle zero? If the answer is only zero then display otherwise exclude it from the output (i think), need this before writing the tests [filtered when flattening, removed zeroes]
+	--Need an init_k_element( grade, coefficient, basis )
 	--Clean up test cases
 	--Convert differences to sums (not sure this is possible)
 	--Tokenizer for the front-end (required to do the symbol lookup)
@@ -97,7 +98,7 @@
 	--Less important but a stepwise expand, allow the user to click through and generate a string of the current state to see
 	  how the process is working
 	--Convert 'k-vector' into 'k-element' since we could have point spaces
-	*/
+*/
 
 #scope_export
 
@@ -184,6 +185,7 @@ init_binary_operator :: ( node: *Binary_Operator_Node, operation: Binary_Op, lef
 
 	return;
 }
+
 
 // parsing:
 skip_spaces :: ( s: string ) -> ( cursor: string ) {
@@ -1037,7 +1039,7 @@ regressive_product :: ( lvalue: *K_Vector_Node, rvalue: *K_Vector_Node ) -> ( re
 
 flatten :: ( subtree: *Expression_Node ) -> ( elements: [..] K_Vector_Node ) {
 
-	// This procedure returns a flat array of k-elements.
+	// This procedure returns a flat array of k-elements that are non-zero.
 	// At this point simplify has executed from the root and we are either left with a single k-element
 	// or a sum of k-elements.
 
@@ -1052,7 +1054,9 @@ flatten :: ( subtree: *Expression_Node ) -> ( elements: [..] K_Vector_Node ) {
 			k_vector.grade       	  = k_vector_node.grade;
 			k_vector.basis_components = k_vector_node.basis_components;
 
-			array_add( elements, k_vector );
+			if k_vector_node.coefficient != 0 {  // float-compare
+				array_add( elements, k_vector );	
+			}
 		}
 		else
 		if node.kind == Node_Kind.Binary_Operator {
@@ -1099,14 +1103,14 @@ k_element_to_string ::  ( k_element: K_Vector_Node ) -> ( result: string ) {
 	builder: String_Builder;
 	num_processed_basis_one_elements: int = 0;
 
-	coefficient := tprint( "%", k_element.coefficient );
+	coefficient: string; 
+	coefficient = tprint( "%", k_element.coefficient );
 	append( *builder, coefficient );
 
 	for i: 0..dimension-1 {
 		if k_element.basis_components & (1 << i) {
 			append( *builder, basis_one_elements[i] );
-			if num_processed_basis_one_elements < k_element.grade-1 {
-				// in an expression like e1^e2 the number of exterior products is the grade-1
+			if num_processed_basis_one_elements < k_element.grade-1 { // in an expression like e1^e2 the number of exterior products is the grade-1
 				append( *builder, "^" );
 			}
 
@@ -1122,16 +1126,26 @@ k_element_to_string ::  ( k_element: K_Vector_Node ) -> ( result: string ) {
 
 elements_to_expression :: ( elements: [] K_Vector_Node ) -> ( expression: string ) {
 
+	// Converts the array of k-elements into a single string expression.
+	// The 'flatten' procedure filters out zero k-elements.
+	// If the tree was either a single zero element or the sum of zero elements our list of elements is empty.
+	// In that case we print a single zero.
+	
 	expression_builder: String_Builder;
-	num_processed_elements: int = 0;
-	i := 0;
-	while i < elements.count-1 {
-		append( *expression_builder, k_element_to_string( elements[i] ) );
-		append( *expression_builder, "+" );
-		i += 1;
-	}
-	append( *expression_builder, k_element_to_string( elements[i] ) );
 
+	if elements.count == 0 {
+		append( *expression_builder, "0" );
+	}
+	else {
+		i := 0;
+		while i < elements.count-1 {
+			append( *expression_builder, k_element_to_string( elements[i] ) );
+			append( *expression_builder, "+" );	
+			i += 1;
+		}
+		append( *expression_builder, k_element_to_string( elements[i] ) );
+	}
+		
 	// TODO: Memory Leak! How do you free the builder mememory???
 	expression: string = builder_to_string( *expression_builder );
 
