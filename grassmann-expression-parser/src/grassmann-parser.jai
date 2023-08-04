@@ -846,6 +846,17 @@ simplify :: ( node: *Expression_Node ) -> ( result: *Expression_Node ) {
 					sum.coefficient += right.coefficient;
 					result = cast(*Expression_Node)sum;
 				}
+				// zero is the additive identity
+				else
+				if left.coefficient == 0 {
+					sum := clone_k_vector( right );
+					result = cast(*Expression_Node)sum;
+				}
+				else
+				if right.coefficient == 0 {
+					sum := clone_k_vector( left );
+					result = cast(*Expression_Node)sum;
+				}
 				else {
 					// sum is of two k-vectors of different grade; can't simplify.
 					result = clone_node( node );
@@ -1000,7 +1011,7 @@ complement :: ( variant: Complement_Variant, k_vector: *K_Vector_Node ) -> ( n_k
 exterior_product :: ( lvalue: *K_Vector_Node, rvalue: *K_Vector_Node ) -> ( result: *K_Vector_Node ) {
 
 	// assume the result is zero, change it if it isn't the case
-	result:= New(K_Vector_Node);
+	result := New(K_Vector_Node);
 	init_k_element( result, grade = 0, coefficient = 0, basis_components = 0 );
 
 	if lvalue.grade == 0 || rvalue.grade == 0 {
@@ -1101,6 +1112,8 @@ sort :: ( elements: *[] K_Vector_Node ) {
 	return;
 }
 
+// TODO: Clean this up, this is crazy territory here just to print sums and differences
+//       Remember this gets called by the debug_print procedure, maybe make your own version and embed in there? 
 k_element_to_string ::  ( k_element: K_Vector_Node, pretty_coefficients: bool = false ) -> ( result: string ) {
 
 	builder: String_Builder;
@@ -1108,10 +1121,19 @@ k_element_to_string ::  ( k_element: K_Vector_Node, pretty_coefficients: bool = 
 
 	coefficient: string; 
 	if pretty_coefficients {
-		if k_element.coefficient != 1.0 && k_element.coefficient != -1.0 {
-			if k_element.coefficient < 0 { coefficient = tprint( "%", k_element.coefficient * -1 ); }
-			else					     { coefficient = tprint( "%", k_element.coefficient ); }
+		if k_element.grade > 0 {
+			if k_element.coefficient != 1.0 && k_element.coefficient != -1.0 {
+				if k_element.coefficient < 0 { coefficient = tprint( "%", k_element.coefficient * -1 ); }
+				else					     { coefficient = tprint( "%", k_element.coefficient ); }
+			}
+			// don't display the coefficient if it is a value of 1 or -1
 		}
+		else {
+			// display any coefficient because this is a scalar
+			if k_element.coefficient < 0 { coefficient = tprint( "%", k_element.coefficient * -1 ); }
+			else						 { coefficient = tprint( "%", k_element.coefficient ); }
+		}
+		
 		append( *builder, coefficient );
 	}
 	else {
@@ -1136,6 +1158,7 @@ k_element_to_string ::  ( k_element: K_Vector_Node, pretty_coefficients: bool = 
 	return s;
 }
 
+// TODO: Revisit this and the procedure for converting the k-element to strings, this is so messy to do something trivial
 elements_to_expression :: ( elements: [] K_Vector_Node ) -> ( expression: string ) {
 
 	// Converts the array of k-elements into a single string expression.
@@ -1268,18 +1291,117 @@ debug_print :: ( expression: string ) {
 	return;
 }
 
-/* Not obvious how I should do this necessarily, but it should work way different, maybe a video on testing
-test :: ( 
-	 dimension: u8
-	,basis: [] string
-	,expression: string
-	,should_print_expression_tree_post_parsing: 	 bool = true
-	,should_print_expression_tree_post_distribution: bool = true
-	,should_print_expression_tree_post_common_factor_theorem:   bool = true
-	,should_print_expression_tree_post_grassmann_operator_eval: bool = true
-) {
+run_tests :: () {
 
-	test_complements
+	// 2D tests
+	{
+		init_dimension( N = 2 );
+		init_basis_one_elements( string.["e1","e2"] );
+
+		expression: string;
+		result:     string;
+
+		// scalars
+		expression = "1";
+		result = eval( expression );
+		assert( result == "1" );
+
+		expression = "-1";
+		result = eval( expression );
+		assert( result == "-1" );
+
+		expression = "1+1";
+		result = eval( expression );
+		assert( result == "2" );
+
+		expression = "1-1";
+		result = eval( expression );
+		assert( result == "0" );
+
+		expression = "1+-1";
+		result = eval( expression );
+		assert( result == "0" );
+
+		expression = "1+(1)";
+		result = eval( expression );
+		assert( result == "2" );
+
+		expression = "(1)+1";
+		result = eval( expression );
+		assert( result == "2" );
+
+		expression = "(1+1)";
+		result = eval( expression );
+		assert( result == "2" );
+
+		expression = "1^1";
+		result = eval( expression );
+		assert( result == "1" );
+
+		expression = "1^2";
+		result = eval( expression );
+		assert( result == "2" );
+
+		expression = "1^2^3";
+		result = eval( expression );
+		assert( result == "6" );
+
+		expression = "1+(2^3)";
+		result = eval( expression );
+		assert( result == "7" );
+
+		expression = "1^(2+3)";
+		result = eval( expression );
+		assert( result == "5" );
+
+		expression = "(1+2)^(3+4)";
+		result = eval( expression );
+		assert( result == "21" );
+
+		expression = "(1+2)^(2+(3^4))";
+		result = eval( expression );
+		assert( result == "42" );
+
+		// basis elements
+		expression = "e1";
+		result = eval( expression );
+		assert( result == "e1" );
+
+		expression = "-e1";
+		result = eval( expression );
+		assert( result == "-e1" );
+
+		expression = "e1-e1";
+		result = eval( expression );
+		assert( result == "0" );
+
+		expression = "e1+e1";
+		result = eval( expression );
+		assert( result == "2e1" );
+
+		expression = "e1^e1";
+		result = eval( expression );
+		assert( result == "0" );
+
+		expression = "e1^e2";
+		result = eval( expression );
+		assert( result == "e1^e2" );
+
+		expression = "e1^(e1+e2)";
+		result = eval( expression );
+		assert( result == "e1^e2" );
+
+		expression = "(e1+e2)^(e1+e2)";
+		result = eval( expression );
+		assert( result == "0" );
+
+	}
+
+
+
+
+/*
+	test_complements // these are the test-cases I guess
 	test_sums
 	test_differences
 	test_exterior_products
@@ -1288,20 +1410,14 @@ test :: (
 
 	test_case += 1;
 	test_complements
-
-	init_dimension( N = dimension );
-	init_basis_one_elements( basis );
-
-	// test should be way way different
-
-	print( "Test case %:\n", test_case );
-	print( "Original Expression: %\n", expression );
+*/
 
 	return;
 }
-*/
 
 main :: () {
+
+	run_tests();
 
 // test N=3 RC(e1)
 // test N=3 RC(e2)
@@ -1354,6 +1470,9 @@ main :: () {
 // test N=3, "e1^e2+e1"
 // test N=3, "e1^(e1+e2)" 
 // test N=3, "(e1+e3)^(e1+e2)" 
+
+
+/*
 
 	// THESE SHOULD BE TESTS AS WELL!
 	init_dimension( N = 4 );
@@ -1426,6 +1545,7 @@ main :: () {
 	print( "%\n", result );
 
 	debug_print( expression );
+*/
 
 	return;
 }
