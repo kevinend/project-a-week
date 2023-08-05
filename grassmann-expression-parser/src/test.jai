@@ -199,6 +199,101 @@ span :: ( values: [] int, span: int ) -> ( k_span: [..] int ) {
 
 main :: () {
 
+	{
+		Vector3  :: struct { x,y,z: float; }
+
+		NewType1 :: struct {
+			#as using _v: Vector3;
+			value1: int;
+		}
+
+		NewType2 :: struct {
+			#as using v: Vector3;
+			value2: float;
+		}
+
+		take_vector3 :: ( v: Vector3 ) {
+			print( "(x,y,z)==(%,%,%)\n", v.x, v.y, v.z );
+			return;
+		}
+
+		nt1 := NewType1.{ x = 1,  y = 2,  z = 3,  value1 = 4 };
+		nt2 := NewType2.{ x = 10, y = 20, z = 30, value2 = 40 };
+	
+		// now that is a cool feature!
+		take_vector3( nt1 );
+		take_vector3( nt2 );
+	}
+
+	{
+		Type_Variant :: enum {
+			Type1;
+			Type2;
+			Type3;
+		}
+		
+		Base :: struct {
+			type: Type_Variant;
+		}
+
+		Type1 :: struct {
+			#as using _type: Base;
+			field1: int;
+		}
+
+		Type2 :: struct {
+			#as using _type: Base;
+			field2: float;
+		}
+
+		// cool so the subtype works on the import of the data
+		take_base :: ( node: *Base ) {
+
+			if node.type == Type_Variant.Type1 {
+				print( "Got a type1\n" );
+			}
+			else
+			if node.type == Type_Variant.Type2 {
+				print( "Got a type2\n" );	
+			}
+
+			return;
+		}
+
+		t1 := New(Type1);
+		t1.type = .Type1;
+
+		t2 := New(Type2);
+		t2.type = .Type2;
+
+		take_base( t1 );
+		take_base( t2 );
+
+		give_base :: ( variant: Type_Variant ) -> ( node: *Base ) {
+	
+			if variant == .Type1 {
+				t1 := New(Type1);
+				t1.type = .Type1;
+				return t1;
+			}
+			else
+			if variant == .Type2 {
+				t2 := New(Type2);
+				t2.type = .Type2;
+				return t2;
+			}
+		}
+
+		t11: *Type1 = cast(*Type1)give_base( .Type1 );
+		t22: *Type2 = cast(*Type2)give_base( .Type2 );
+	}
+
+	{
+		// so how does this benefit us in what we are trying to do???
+		// we can't pass an Expression_Node to some functions without a ton of casting
+		// i don't even know if this works on the return
+	}
+
 	some_float: float = 3.14;
 	some_float_string: string = tprint( "%", some_float );
 	print( "some_float_string == %\n", some_float_string ); // well that worked

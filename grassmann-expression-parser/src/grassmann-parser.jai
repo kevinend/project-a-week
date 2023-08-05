@@ -91,6 +91,8 @@
 	xxx--Need an init_k_element( grade, coefficient, basis )
 	xxx--Pretty print the final expression for the test cases
 	--Clean up test cases
+	--'As' to remove all the casting all over God's green earth
+	--Debugging tips on how to look at nodes in a tree
 	--Tokenizer for the front-end (required to do the symbol lookup)
 	--Symbol table so you can stash values, say you have a point P = e0 + e1 + e2, want to store that for reuse (then you have an interpreter effectively)
 	--DeMorgan's Law, I ALWAYS forget this and it's impossible to remember
@@ -840,6 +842,12 @@ simplify :: ( node: *Expression_Node ) -> ( result: *Expression_Node ) {
 			}
 			else 
 			if operation == .Sum || operation == .Difference {
+				// sum( binary_operator, left, right )
+				// if left.grade != right.grade {
+				// 
+				// }
+				// else
+				// we can just generate a new one, pass in the left and right, if we can't return a new binary operator
 				if left.grade == right.grade && left.basis_components == right.basis_components {
 					sum := clone_k_vector( left );
 					if operation == .Difference { right.coefficient *= -1; } // part of expand could be converting differences into sums
@@ -1057,8 +1065,9 @@ regressive_product :: ( lvalue: *K_Vector_Node, rvalue: *K_Vector_Node ) -> ( re
 flatten :: ( subtree: *Expression_Node ) -> ( elements: [..] K_Vector_Node ) {
 
 	// This procedure returns a flat array of k-elements that are non-zero.
-	// At this point simplify has executed from the root and we are either left with a single k-element
-	// or a sum of k-elements.
+	// At this point simplify has executed from the root and we are either left with a single k-element or a sum of k-elements.
+	// If the element has a zero coefficient we exclude it from the final output. The conversion to a string takes care of the
+	// case when the final result is zero.
 
 	helper :: ( node: *Expression_Node, elements: *[..] K_Vector_Node ) {
 
@@ -1068,7 +1077,7 @@ flatten :: ( subtree: *Expression_Node ) -> ( elements: [..] K_Vector_Node ) {
 			k_vector: K_Vector_Node;
 			init_k_element( *k_vector, k_vector_node.grade, k_vector_node.coefficient, k_vector_node.basis_components );
 
-			if k_vector_node.coefficient != 0 {  // float-compare
+			if k_vector_node.coefficient != 0 {  // float-compare!!!
 				array_add( elements, k_vector );	
 			}
 		}
@@ -1379,6 +1388,26 @@ run_tests :: () {
 		result = eval( expression );
 		assert( result == "2e1" );
 
+		expression = "-(e1+e2)";
+		result = eval( expression );
+		assert( result == "-e1 - e2" );
+
+		expression = "1^e1";
+		result = eval( expression );
+		assert( result == "e1" );
+
+		expression = "e1^1";
+		result = eval( expression );
+		assert( result == "e1" );
+
+		expression = "0^e1";
+		result = eval( expression );
+		assert( result == "0" );
+
+		expression = "e1^0";
+		result = eval( expression );
+		assert( result == "0" );
+
 		expression = "e1^e1";
 		result = eval( expression );
 		assert( result == "0" );
@@ -1395,7 +1424,38 @@ run_tests :: () {
 		result = eval( expression );
 		assert( result == "0" );
 
+		expression = "LC(e1)";
+		result = eval( expression );
+		assert( result == "-e2" );
+
+		expression = "LC(e2)";
+		result = eval( expression );
+		assert( result == "e1" );
+
+		expression = "RC(e1)";
+		result = eval( expression );
+		assert( result == "e2" );
+
+		expression = "RC(e2)";
+		result = eval( expression );
+		assert( result == "-e1" );
+
+		// MAYBE I DON'T WANT TO SORT FOR THIS REASON!!!
+		// my expectation is to see  e2 - e1 not the reverse of that because of the sort
+		expression = "RC(e1+e2)";
+		result = eval( expression );
+		assert( result == "-e1 + e2" );
+
+		expression = "LC(e1+e2)";
+		result = eval( expression );
+		debug_print( expression );
+		assert( result == "e1 - e2" );
+
+
+
 	}
+
+
 
 
 
