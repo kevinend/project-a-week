@@ -806,8 +806,11 @@ simplify :: ( node: *Expression_Node ) -> ( result: *Expression_Node ) {
 	}
 	else
 	if node.kind == Node_Kind.Unary_Operator {
-		// this is running post distribution, so we should know that the arg is a k-vetor node
 		unary_operator := cast(*Unary_Operator_Node)node;
+		unary_operator.operand = simplify( unary_operator.operand );
+
+		assert( unary_operator.operand.kind == Node_Kind.K_Vector );
+
 		operand := cast(*K_Vector_Node)unary_operator.operand;
 
 		if unary_operator.operation == .Left_Complement {
@@ -1448,29 +1451,22 @@ run_tests :: () {
 
 		expression = "LC(e1+e2)";
 		result = eval( expression );
-		debug_print( expression );
 		assert( result == "e1 - e2" );
 
+		// THESE TWO ABOVE NEED FLIPPED AROUND ^^^
 
+		expression = "RC(e1^e2)";
+	    result = eval( expression );
+        assert( result == "1" );
 
+		expression = "LC(e1^e2)";
+	    result = eval( expression );
+        assert( result == "1" );
+
+		expression = "LC(e1)^RC(e2)"; 
+	    result = eval( expression );
+        assert( result == "-e1^e2" );
 	}
-
-
-
-
-
-
-/*
-	test_complements // these are the test-cases I guess
-	test_sums
-	test_differences
-	test_exterior_products
-	test_regressive_products
-	test_whatever
-
-	test_case += 1;
-	test_complements
-*/
 
 	return;
 }
