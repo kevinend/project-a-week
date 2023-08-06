@@ -211,6 +211,7 @@ skip_spaces :: ( s: string ) -> ( cursor: string ) {
 	}
 	return cursor;
 }
+
 string_compare :: ( s1: string, s2: string, n: int ) -> ( result: int, success: bool ) {
 
 	// Invalid return values:
@@ -1086,29 +1087,6 @@ flatten :: ( subtree: *Expression_Node ) -> ( elements: [..] K_Vector_Node ) {
 	return elements;
 }
 
-sort :: ( elements: *[] K_Vector_Node ) {
-
-	// bubble sort
-
-	swapped: bool = false;
-	for _: 0..elements.count-1 {
-		for i: 0..elements.count-2 {
-			if (<<elements)[i+1].grade <= (<<elements)[i].grade &&
-			   (<<elements)[i+1].basis_components < (<<elements)[i].basis_components {
-					
-					temp := (<<elements)[i];
-					(<<elements)[i]   = (<<elements)[i+1];
-					(<<elements)[i+1] = temp;
-
-					swapped = true;
-			}
-		}
-		if !swapped { return; }
-		swapped = false;
-	}
-
-	return;
-}
 
 // TODO: Clean this up, this is crazy territory here just to print sums and differences
 //       Remember this gets called by the debug_print procedure, maybe make your own version and embed in there? 
@@ -1200,8 +1178,6 @@ eval :: ( expression: string ) -> ( result: string ) {
 	elements: [..] K_Vector_Node;
 	elements = flatten( expression_tree );
 	
-	sort( *elements );
-
 	result: string;
 	result = elements_to_expression( elements );
 
@@ -1277,8 +1253,6 @@ debug_print :: ( expression: string ) {
 
 	elements: [..] K_Vector_Node;
 	elements = flatten( expression_tree );
-
-	sort ( *elements );
 
 	result: string;
 	result = elements_to_expression( elements );
@@ -1429,17 +1403,13 @@ run_tests :: () {
 		result = eval( expression );
 		assert( result == "-e1" );
 
-		// MAYBE I DON'T WANT TO SORT FOR THIS REASON!!!
-		// my expectation is to see  e2 - e1 not the reverse of that because of the sort
 		expression = "RC(e1+e2)";
 		result = eval( expression );
-		assert( result == "-e1 + e2" );
+		assert( result == "e2 - e1" );
 
 		expression = "LC(e1+e2)";
 		result = eval( expression );
-		assert( result == "e1 - e2" );
-
-		// THESE TWO ABOVE NEED FLIPPED AROUND ^^^
+		assert( result == "-e2 + e1" );
 
 		expression = "RC(e1^e2)";
 	    result = eval( expression );
