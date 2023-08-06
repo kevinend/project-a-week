@@ -90,7 +90,10 @@
 	xxx--How to handle zero? If the answer is only zero then display otherwise exclude it from the output (i think), need this before writing the tests [filtered when flattening, removed zeroes]
 	xxx--Need an init_k_element( grade, coefficient, basis )
 	xxx--Pretty print the final expression for the test cases
-	--Clean up test cases
+	--New test cases:
+		xxx-- 2D
+		-- 3D
+		-- 4D
 	--'As' to remove all the casting all over God's green earth
 	--Debugging tips on how to look at nodes in a tree
 	--Tokenizer for the front-end (required to do the symbol lookup)
@@ -101,6 +104,12 @@
 	  how the process is working
 	--Convert 'k-vector' into 'k-element' since we could have point spaces
 
+*/
+
+/*
+	want to remove the casting that is happening everywhere
+	need to remove clone_k_vector, clone_binary_operator and clone_unary_operator
+	then replace calls with clone_node and cast the return value
 */
 
 #scope_export
@@ -124,9 +133,8 @@ Expression_Node :: struct {
 }
 
 K_Vector_Node :: struct {
-
-	// scalar, vector, bivector, trivector, ... , n-vector
-	using _instance: Expression_Node;
+	// Handles scalars, and any k-vectors up to the dimension
+	#as using _kind: Expression_Node;
 
 	grade: int;
 	coefficient: float;
@@ -141,7 +149,7 @@ Unary_Op :: enum {
 
 Unary_Operator_Node :: struct {
 	// negation, left and right complements
-	using _instance: Expression_Node;
+	#as using _kind: Expression_Node;
 
 	operation: Unary_Op;
 	operand:  *Expression_Node;
@@ -155,8 +163,8 @@ Binary_Op :: enum u8 {
 }
 
 Binary_Operator_Node :: struct {
-	// exterior, regressive, and interior products, +, -, *, / (division just handled for scalars now even though grassman division is supported)
-	using _instance: Expression_Node;
+	// exterior, regressive, and interior products, sums and differences 
+	#as using _kind: Expression_Node;
 
 	operation: Binary_Op;
 	left_\operand: *Expression_Node;
@@ -456,53 +464,41 @@ init_basis_one_elements :: ( one_element_symbols: [] string ) {
 	return;
 }
 
-clone_k_vector :: ( k_vector: *K_Vector_Node ) -> ( cloned_node: *K_Vector_Node ) {
-
-	cloned_node := New(K_Vector_Node);
-	init_k_element( cloned_node, k_vector.grade, k_vector.coefficient, k_vector.basis_components );
-
-	/*
-	cloned_node.kind  			 = Node_Kind.K_Vector;
-	cloned_node.grade 			 = k_vector_node.grade;
-	cloned_node.coefficient 	 = k_vector_node.coefficient;
-	cloned_node.basis_components = k_vector_node.basis_components;
-	*/
-
-	return cloned_node;
-}
-
-clone_unary_operator :: ( unary_operator: *Unary_Operator_Node ) -> ( cloned_node: *Unary_Operator_Node ) {
-
-	cloned_node := New(Unary_Operator_Node);
-	init_unary_operator( cloned_node, unary_operator.operation, clone_node( unary_operator.operand ) );
-	return cloned_node;
-}
-
-clone_binary_operator :: ( binary_operator: *Binary_Operator_Node ) -> ( cloned_node: *Binary_Operator_Node ) {
-
-	cloned_node := New(Binary_Operator_Node);
-	init_binary_operator( 
-		cloned_node
-	   ,binary_operator.operation
-	   ,clone_node( binary_operator.left\_operand )
-	   ,clone_node( binary_operator.right_operand )
-	);
-
-	return cloned_node;
-}
-
 clone_node :: ( node: *Expression_Node ) -> ( cloned_node: *Expression_Node ) {
-		
+
 	if node.kind == Node_Kind.K_Vector {
-		return cast(*Expression_Node)clone_k_vector( cast(*K_Vector_Node)node );
+		
+		k_vector := cast(*K_Vector_Node)node;
+
+		cloned_node := New(K_Vector_Node);
+		init_k_element( cloned_node, k_vector.grade, k_vector.coefficient, k_vector.basis_components );
+
+		return cast(*Expression_Node)cloned_node;
 	}
 	else
 	if node.kind == Node_Kind.Unary_Operator {
-		return cast(*Expression_Node)clone_unary_operator( cast(*Unary_Operator_Node)node );
+
+		unary_operator := cast(*Unary_Operator_Node)node;
+
+		cloned_node := New(Unary_Operator_Node);
+		init_unary_operator( cloned_node, unary_operator.operation, clone_node( unary_operator.operand ) );
+
+		return cast(*Expression_Node)cloned_node;
 	}
 	else
 	if node.kind == Node_Kind.Binary_Operator {
-		return cast(*Expression_Node)clone_binary_operator( cast(*Binary_Operator_Node)node );
+
+		binary_operator := cast(*Binary_Operator_Node)node;
+
+		cloned_node := New(Binary_Operator_Node);
+		init_binary_operator(
+			 cloned_node
+			,binary_operator.operation
+			,clone_node( binary_operator.left\_operand )
+			,clone_node( binary_operator.right_operand )
+		);
+
+		return cast(*Expression_Node)cloned_node;
 	}
 	else {
 		print( "Unrecognized node kind found when cloning nodes\n" );
@@ -511,6 +507,7 @@ clone_node :: ( node: *Expression_Node ) -> ( cloned_node: *Expression_Node ) {
 }
 
 is_grassmann_operator :: ( op: Binary_Op ) -> (bool) {
+
 	if op == .Exterior_Product || op == .Regressive_Product {
 		return true;
 	}
@@ -683,29 +680,25 @@ generate_k_span   :: ( element: *K_Vector_Node, k: int ) -> ( k_span: [..] *K_Ve
 	}
 
 	k_span: [..] *K_Vector_Node;
-	k_element := New(K_Vector_Node);
 	if k == 1 {
 		for i: 0..one_span.count-1 {
-
+			k_element := New(K_Vector_Node);
 			init_k_element( k_element, grade = 1, coefficient = 1, basis_components = (1 << one_span[i]) );
 
-			array_add( *k_span, clone_k_vector( k_element ) );
-
-			k_element.basis_components &= 0; // reset/clear bits
+			array_add( *k_span, k_element );
 		}
 	}
 	else {
 		// build the set of k-elements (k-combinations) from the one-span.
 		// this is O(N^3), probably a better way to do this!
-		one_element := New(K_Vector_Node);
 		for i: 0..one_span.count-1 {
 
-			one_element.basis_components &= 0;
+			one_element := New(K_Vector_Node);
 			init_k_element( one_element, grade = 1, coefficient = 1, basis_components = (1 << one_span[i]) );
 
-			k_element := clone_k_vector( one_element );
-
 			for j: i+1..one_span.count-1 {
+
+				k_element := cast(*K_Vector_Node)clone_node( one_element );
 
 				num_remaining_one_elements := one_span.count-j;
 		
@@ -718,8 +711,6 @@ generate_k_span   :: ( element: *K_Vector_Node, k: int ) -> ( k_span: [..] *K_Ve
 					}
 
 					array_add( *k_span, k_element );
-
-					k_element = clone_k_vector( one_element );
 				}
 			}
 		}
@@ -823,7 +814,7 @@ simplify :: ( node: *Expression_Node ) -> ( result: *Expression_Node ) {
 		else 
 		if unary_operator.operation == .Negation {
 			operand.coefficient *= -1;
-			result = cast(*Expression_Node)clone_k_vector( operand );
+			result = clone_node( operand );
 		}
 	}
 	else {
@@ -852,7 +843,7 @@ simplify :: ( node: *Expression_Node ) -> ( result: *Expression_Node ) {
 				// else
 				// we can just generate a new one, pass in the left and right, if we can't return a new binary operator
 				if left.grade == right.grade && left.basis_components == right.basis_components {
-					sum := clone_k_vector( left );
+					sum := cast(*K_Vector_Node)clone_node( left );
 					if operation == .Difference { right.coefficient *= -1; } // part of expand could be converting differences into sums
 					sum.coefficient += right.coefficient;
 					result = cast(*Expression_Node)sum;
@@ -860,12 +851,12 @@ simplify :: ( node: *Expression_Node ) -> ( result: *Expression_Node ) {
 				// zero is the additive identity
 				else
 				if left.coefficient == 0 {
-					sum := clone_k_vector( right );
+					sum := cast(*K_Vector_Node)clone_node( right );
 					result = cast(*Expression_Node)sum;
 				}
 				else
 				if right.coefficient == 0 {
-					sum := clone_k_vector( left );
+					sum := cast(*K_Vector_Node)clone_node( left );
 					result = cast(*Expression_Node)sum;
 				}
 				else {
@@ -930,7 +921,7 @@ apply_common_factor_theorem :: ( node: *Expression_Node ) -> ( tree: *Expression
 					init_binary_operator( 
 						 exterior_product_node
 						,.Exterior_Product
-						,cast(*Expression_Node)clone_k_vector( left )
+						,clone_node( left )
 						,cast(*Expression_Node)k_cospan[i] 
 					);
 
@@ -1473,7 +1464,9 @@ run_tests :: () {
 
 main :: () {
 
+	print( "Running tests...\n" );
 	run_tests();
+	print( "Test execution completed!\n" );
 
 // test N=3 RC(e1)
 // test N=3 RC(e2)
