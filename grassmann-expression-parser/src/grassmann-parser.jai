@@ -90,11 +90,12 @@
 	xxx--How to handle zero? If the answer is only zero then display otherwise exclude it from the output (i think), need this before writing the tests [filtered when flattening, removed zeroes]
 	xxx--Need an init_k_element( grade, coefficient, basis )
 	xxx--Pretty print the final expression for the test cases
+	xxx--Remove clone_k_vector, clone_unary_operator, clone_binary_operator
 	--New test cases:
 		xxx-- 2D
 		-- 3D
 		-- 4D
-	--'As' to remove all the casting all over God's green earth
+	xxx--'As' to remove all the casting all over God's green earth
 	--Debugging tips on how to look at nodes in a tree
 	--Tokenizer for the front-end (required to do the symbol lookup)
 	--Symbol table so you can stash values, say you have a point P = e0 + e1 + e2, want to store that for reuse (then you have an interpreter effectively)
@@ -104,12 +105,6 @@
 	  how the process is working
 	--Convert 'k-vector' into 'k-element' since we could have point spaces
 
-*/
-
-/*
-	want to remove the casting that is happening everywhere
-	need to remove clone_k_vector, clone_binary_operator and clone_unary_operator
-	then replace calls with clone_node and cast the return value
 */
 
 #scope_export
@@ -277,7 +272,7 @@ get_basis_one_element :: ( expression: string, basis_element_index: s64 ) -> ( n
 
 	advance( *cursor, basis_one_element.count );
 
-	return cast(*Expression_Node)node, cursor;
+	return node, cursor;
 }
 
 parse_expression :: ( expression: string ) -> ( node: *Expression_Node, cursor: string ) {
@@ -303,7 +298,7 @@ parse_expression :: ( expression: string ) -> ( node: *Expression_Node, cursor: 
 		node := New(Binary_Operator_Node);
 		init_binary_operator( node, operation, term, next_term );
 
-		term = cast(*Expression_Node)node;
+		term = node;
 	}
 
 	return term, cursor;
@@ -333,7 +328,7 @@ parse_exterior_term :: ( expression: string ) -> ( node: *Expression_Node, curso
 		node := New(Binary_Operator_Node);
 		init_binary_operator( node, operation, factor, next_factor );
 
-		factor = cast(*Expression_Node)node;
+		factor = node;
 	}
 
 	return factor, cursor;
@@ -376,7 +371,7 @@ parse_exterior_factor :: ( expression: string ) -> ( node: *Expression_Node, cur
 		scalar_node := New(K_Vector_Node);
 		init_k_element( scalar_node, grade = 0, coefficient = value, basis_components = 0 );
 
-		node = cast(*Expression_Node)scalar_node;
+		node = scalar_node;
 	}
 	else
 	if cursor[0] == #char "(" {
@@ -401,21 +396,21 @@ parse_exterior_factor :: ( expression: string ) -> ( node: *Expression_Node, cur
 		parent_node := New(Unary_Operator_Node);
 		init_unary_operator( parent_node, .Negation, node );
 
-		node = cast(*Expression_Node)parent_node;
+		node = parent_node;
 	}
 
 	if take_left_complement {
 		parent_node := New(Unary_Operator_Node);
 		init_unary_operator( parent_node, .Left_Complement, node );
 
-		node = cast(*Expression_Node)parent_node;
+		node = parent_node;
 	}
 	else
 	if take_right_complement {
 		parent_node := New(Unary_Operator_Node);
 		init_unary_operator( parent_node, .Right_Complement, node );
 
-		node = cast(*Expression_Node)parent_node;
+		node = parent_node;
 	}
 
 	return node, cursor;
@@ -473,7 +468,7 @@ clone_node :: ( node: *Expression_Node ) -> ( cloned_node: *Expression_Node ) {
 		cloned_node := New(K_Vector_Node);
 		init_k_element( cloned_node, k_vector.grade, k_vector.coefficient, k_vector.basis_components );
 
-		return cast(*Expression_Node)cloned_node;
+		return cloned_node;
 	}
 	else
 	if node.kind == Node_Kind.Unary_Operator {
@@ -483,7 +478,7 @@ clone_node :: ( node: *Expression_Node ) -> ( cloned_node: *Expression_Node ) {
 		cloned_node := New(Unary_Operator_Node);
 		init_unary_operator( cloned_node, unary_operator.operation, clone_node( unary_operator.operand ) );
 
-		return cast(*Expression_Node)cloned_node;
+		return cloned_node;
 	}
 	else
 	if node.kind == Node_Kind.Binary_Operator {
@@ -498,7 +493,7 @@ clone_node :: ( node: *Expression_Node ) -> ( cloned_node: *Expression_Node ) {
 			,clone_node( binary_operator.right_operand )
 		);
 
-		return cast(*Expression_Node)cloned_node;
+		return cloned_node;
 	}
 	else {
 		print( "Unrecognized node kind found when cloning nodes\n" );
@@ -554,11 +549,11 @@ distribute_grassmann_products :: ( node: *Expression_Node ) -> ( tree: *Expressi
 			init_binary_operator(
 				 new_binary_operator
 				,binary_operator.operation
-				,distribute_grassmann_products( cast(*Expression_Node)new_left\_node )
-				,distribute_grassmann_products( cast(*Expression_Node)new_right_node )
+				,distribute_grassmann_products( new_left\_node )
+				,distribute_grassmann_products( new_right_node )
 			);
 
-			subtree = cast(*Expression_Node)new_binary_operator;
+			subtree = new_binary_operator;
 		}
 		else {
 			subtree = clone_node( node );
@@ -605,26 +600,26 @@ distribute_grassmann_products :: ( node: *Expression_Node ) -> ( tree: *Expressi
 			init_binary_operator(
 				 new_left_node
 				,grassmann_operator
-				,clone_node( cast(*Expression_Node)left_operator.left_operand )
-				,clone_node( cast(*Expression_Node)binary_operator.right_operand )
+				,clone_node( left_operator.left_operand )
+				,clone_node( binary_operator.right_operand )
 			);
 
 			init_binary_operator(
 				 new_right_node
 				,grassmann_operator
-				,clone_node( cast(*Expression_Node)left_operator.right_operand )
-				,clone_node( cast(*Expression_Node)binary_operator.right_operand )
+				,clone_node( left_operator.right_operand )
+				,clone_node( binary_operator.right_operand )
 			);
 
 			// to fully expand the subtrees we need to recursively call this procedure against the new left and right subtrees
 			init_binary_operator(
 				 new_binary_operator
 				,distribute_over_operator // sum or difference
-				,distribute_grassmann_products( cast(*Expression_Node)new_left\_node )
-				,distribute_grassmann_products( cast(*Expression_Node)new_right_node )
+				,distribute_grassmann_products( new_left\_node )
+				,distribute_grassmann_products( new_right_node )
 			);
 
-			subtree = cast(*Expression_Node)new_binary_operator;
+			subtree = new_binary_operator;
 		}
 		else
 		if distribute_over_right_operand {
@@ -640,26 +635,26 @@ distribute_grassmann_products :: ( node: *Expression_Node ) -> ( tree: *Expressi
 			init_binary_operator(
 				 new_left_node
 				,grassmann_operator
-				,clone_node( cast(*Expression_Node)binary_operator.left_operand )
-				,clone_node( cast(*Expression_Node)right_operator.left_operand )
+				,clone_node( binary_operator.left_operand )
+				,clone_node( right_operator.left_operand )
 			);
 
 			init_binary_operator(
 				 new_right_node
 				,grassmann_operator
-				,clone_node( cast(*Expression_Node)binary_operator.left_operand )
-				,clone_node( cast(*Expression_Node)right_operator.right_operand )
+				,clone_node( binary_operator.left_operand )
+				,clone_node( right_operator.right_operand )
 			);
 
 			// to fully expand the subtrees we need to recursively call this procedure against the new left and right subtrees
 			init_binary_operator(
 				 new_binary_operator
 				,distribute_over_operator // sum or difference
-				,distribute_grassmann_products( cast(*Expression_Node)new_left\_node )
-				,distribute_grassmann_products( cast(*Expression_Node)new_right_node )
+				,distribute_grassmann_products( new_left\_node )
+				,distribute_grassmann_products( new_right_node )
 			);
 
-			subtree = cast(*Expression_Node)new_binary_operator;
+			subtree = new_binary_operator;
 		}
 		else {
 			subtree = clone_node( node );
@@ -805,11 +800,11 @@ simplify :: ( node: *Expression_Node ) -> ( result: *Expression_Node ) {
 		operand := cast(*K_Vector_Node)unary_operator.operand;
 
 		if unary_operator.operation == .Left_Complement {
-			result = cast(*Expression_Node)complement( Complement_Variant.Left, operand );
+			result = complement( Complement_Variant.Left, operand );
 		}
 		else
 		if unary_operator.operation == .Right_Complement {
-			result = cast(*Expression_Node)complement( Complement_Variant.Right, operand );
+			result = complement( Complement_Variant.Right, operand );
 		}
 		else 
 		if unary_operator.operation == .Negation {
@@ -828,11 +823,11 @@ simplify :: ( node: *Expression_Node ) -> ( result: *Expression_Node ) {
 
 			operation := binary_operator.operation;
 			if operation == .Exterior_Product {
-				result = cast(*Expression_Node)exterior_product( left, right );
+				result = exterior_product( left, right );
 			}
 			else
 			if operation == .Regressive_Product {
-				result = cast(*Expression_Node)regressive_product( left, right );
+				result = regressive_product( left, right );
 			}
 			else 
 			if operation == .Sum || operation == .Difference {
@@ -846,18 +841,18 @@ simplify :: ( node: *Expression_Node ) -> ( result: *Expression_Node ) {
 					sum := cast(*K_Vector_Node)clone_node( left );
 					if operation == .Difference { right.coefficient *= -1; } // part of expand could be converting differences into sums
 					sum.coefficient += right.coefficient;
-					result = cast(*Expression_Node)sum;
+					result = sum;
 				}
 				// zero is the additive identity
 				else
 				if left.coefficient == 0 {
 					sum := cast(*K_Vector_Node)clone_node( right );
-					result = cast(*Expression_Node)sum;
+					result = sum;
 				}
 				else
 				if right.coefficient == 0 {
 					sum := cast(*K_Vector_Node)clone_node( left );
-					result = cast(*Expression_Node)sum;
+					result = sum;
 				}
 				else {
 					// sum is of two k-vectors of different grade; can't simplify.
@@ -922,15 +917,15 @@ apply_common_factor_theorem :: ( node: *Expression_Node ) -> ( tree: *Expression
 						 exterior_product_node
 						,.Exterior_Product
 						,clone_node( left )
-						,cast(*Expression_Node)k_cospan[i] 
+						,k_cospan[i] 
 					);
 
 					regressive_product_node := New(Binary_Operator_Node);
 					init_binary_operator(
 						 regressive_product_node
 						,.Regressive_Product
-						,cast(*Expression_Node)exterior_product_node
-						,cast(*Expression_Node)k_span[i]
+						,exterior_product_node
+						,k_span[i]
 					);
 
 					array_add( *regressive_product_subtrees, regressive_product_node );
@@ -946,7 +941,7 @@ apply_common_factor_theorem :: ( node: *Expression_Node ) -> ( tree: *Expression
 
 
 				if regressive_product_subtrees.count == 1 {
-					subtree = cast(*Expression_Node)regressive_product_subtrees[0];
+					subtree = regressive_product_subtrees[0];
 				}
 				else {
 
@@ -956,22 +951,22 @@ apply_common_factor_theorem :: ( node: *Expression_Node ) -> ( tree: *Expression
 					i: int = 0;
 					current := root;
 					while i < regressive_product_subtrees.count-2 { 
-						current.left_operand = cast(*Expression_Node)regressive_product_subtrees[i];
+						current.left_operand = regressive_product_subtrees[i];
 						
 						next := New(Binary_Operator_Node);
 						init_binary_operator( next, .Sum, null, null );
 
-						current.right_operand = cast(*Expression_Node)next;
+						current.right_operand = next;
 						current = next;
 
 						i += 1;
 					}
 
 					// the final sum needs handled outside the loop
-					current.left\_operand = cast(*Expression_Node)regressive_product_subtrees[i];
-					current.right_operand = cast(*Expression_Node)regressive_product_subtrees[i+1];
+					current.left\_operand = regressive_product_subtrees[i];
+					current.right_operand = regressive_product_subtrees[i+1];
 
-					subtree = cast(*Expression_Node)root;
+					subtree = root;
 				}
 			}
 		}
