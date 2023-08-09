@@ -91,21 +91,38 @@
 	xxx--Need an init_k_element( grade, coefficient, basis )
 	xxx--Pretty print the final expression for the test cases
 	xxx--Remove clone_k_vector, clone_unary_operator, clone_binary_operator
+	xxx--'As' to remove all the casting all over God's green earth
+	xxx--Return results as a string and have the tests pass or fail based on the output, a simple string compare
+	--Tokenizer for the front-end (required to do the symbol lookup)
 	--New test cases:
 		xxx-- 2D
 		-- 3D
 		-- 4D
-	xxx--'As' to remove all the casting all over God's green earth
-	--Debugging tips on how to look at nodes in a tree
-	--Tokenizer for the front-end (required to do the symbol lookup)
-	--Symbol table so you can stash values, say you have a point P = e0 + e1 + e2, want to store that for reuse (then you have an interpreter effectively)
-	--DeMorgan's Law, I ALWAYS forget this and it's impossible to remember
-		--Return results as a string and have the tests pass or fail based on the output, a simple string compare
-	--Less important but a stepwise expand, allow the user to click through and generate a string of the current state to see
-	  how the process is working
+		--Debugging tips on how to look at nodes in a tree
+		--Symbol table so you can stash values, say you have a point P = e0 + e1 + e2, want to store that for reuse (then you have an interpreter effectively)
+		--Less important but a stepwise expand, allow the user to click through and generate a string of the current state to see
+	  	  how the process is working
 	--Convert 'k-vector' into 'k-element' since we could have point spaces
+	--DeMorgan's Law, I ALWAYS forget this and it's impossible to remember
+
 
 */
+
+/*
+Identifier
+Keyword (these have to be defined ahead of time), expand, simplify, eval, k-span, k-cospan
+Literal -- numbers effectively, coefficients
+Separator, {, (, ), ;
+Operator, +, -, RC, LC, R, ^, I
+
+L1 = e0 + ae1 + be2; 
+L2 = e0 + ae2 + be2;
+L3 = L1 ^ L2;
+eval( L3 );
+
+*/
+
+
 
 #scope_export
 
@@ -116,7 +133,59 @@ n_element: int;
 
 test_case: int = 0;
 
-// data structures:
+// Data Structures:
+
+// Lexing:
+Token_Kind :: enum {
+
+	Undefined;
+
+	Identifier;
+	Literal; 
+	Keyword;
+
+	Equals;
+	Plus;
+	Minus;
+	Exterior_Product;
+	Regressive_Product;
+	Interior_Product;
+	Left_Complement;
+	Right_Complement;
+
+	Open_Paranthesis;
+	Close_Paranthesis;
+	Semicolon;
+}
+
+Token :: struct {
+	kind: Token_Kind;	
+}
+
+Identifier_Token :: struct {
+	#as using _kind: Token;
+	value: string;
+}
+
+Literal_Token :: struct {
+	#as using _kind: Token;
+	value: string;
+}
+
+Keyword_Token :: struct {
+	#as using _kind: Token;
+	value: string;
+}
+
+Operator_Token :: struct {
+	#as using _kind: Token;
+}
+
+Separator_Token :: struct {
+	#as using _kind: Token;
+}
+
+// Parsing/Eval:
 Node_Kind :: enum {
 	K_Vector;
 	Unary_Operator; 
@@ -172,6 +241,246 @@ Complement_Variant :: enum {
 }
 
 // procedures:
+skip_spaces :: ( s: string ) -> ( cursor: string ) {
+	cursor := s;
+	while cursor && (cursor[0] == #char " " || cursor[0] == #char "\n" || cursor[0] == 9) { // horizontal tab
+		advance( *cursor, 1 );
+	}
+	return cursor;
+}
+
+is_whitespace :: ( s: string ) -> ( found: bool ) {
+	cursor := s;
+	if cursor[0] == #char " " || cursor[0] == #char "\n" || cursor[0] == 9 { // horizontal tab
+		return true;
+	}
+	else {
+		return false;
+	}
+}
+
+string_copy :: ( s: string, n: int ) -> ( copy: string ) {
+
+	copy: string;
+	copy.data  = alloc( n );
+	copy.count = s.count;
+	memcpy( copy.data, s.data, n );
+
+	return copy;
+}
+
+lex :: ( expression: string ) -> ( tokens: [..] *Token ) {
+
+	generate_token :: ( lexeme: string ) -> ( token: *Token, token_length: int ) {
+
+		get_operator :: ( lexeme: string ) -> ( token: *Token, match: bool, length: int ) {
+			
+			token_kind: Token_Kind = .Undefined;
+			length: int = 0;
+			if lexeme[0] == {
+				case #char "="; { token_kind = .Equals; 			length = 1; }
+				case #char "+"; { token_kind = .Plus;   		  	length = 1; }
+				case #char "-"; { token_kind = .Minus; 			  	length = 1; }
+				case #char "^"; { token_kind = .Exterior_Product;   length = 1; }
+				case #char "R"; { token_kind = .Regressive_Product; length = 1; }
+				case #char "I"; { token_kind = .Interior_Product;   length = 1; }
+			}
+
+			// for left and right complement need to compare the string values
+			if string_compare( lexeme, "LC", 2 ) == 0 {
+				token_kind = .Left_Complement;
+				length = 2;
+			}
+			else
+			if string_compare( lexeme, "RC", 2 ) == 0 {
+				token_kind = .Right_Complement;
+				length = 2;
+			}
+
+			if token_kind != .Undefined {
+				token := New(Operator_Token);
+				token.kind = token_kind;
+				return token, true, length;
+			}
+			else {
+				return null, false, 0;
+			}
+		}
+
+		get_separator :: ( lexeme: string ) -> ( token: *Token, match: bool, length: int ) {
+			
+			token_kind: Token_Kind = .Undefined;
+			length: int = 0;
+			if lexeme[0] == {
+				case #char "("; { token_kind = .Open_Paranthesis;   length = 1; }
+				case #char ")"; { token_kind = .Close_Paranthesis;  length = 1; }
+				case #char ";"; { token_kind = .Semicolon; 		    length = 1; }
+			}
+
+			if token_kind != .Undefined {
+				token := New(Separator_Token);
+				token.kind = token_kind;
+				return token, true, length;
+			}
+			else {
+				return null, false, 0;
+			}		
+		}
+
+		get_literal :: ( lexeme: string ) -> ( token: *Token, match: bool, length: int ) {
+
+			seek := lexeme;
+			length: int = 0;
+			if is_digit( seek[0] ) {
+				advance( *seek, 1 );
+				while seek && (is_digit( seek[0] ) || seek[0] == #char ".") {
+					advance( *seek, 1 );	
+				}
+
+				length = seek.data - lexeme.data;
+
+				token := New(Literal_Token);
+				token.kind = .Literal;
+				token.value = string_copy( lexeme, length );
+				
+				return token, true, length;
+			}
+			else
+			if seek[0] == #char "\"" {
+				advance( *seek, 1 );
+				while seek && seek[0] != #char "\"" {
+					advance( *seek, 1 );
+				}
+
+				length = seek.data - lexeme.data;
+
+				token := New(Literal_Token);
+				token.kind = .Literal;
+				token.value = string_copy( lexeme, length );
+
+				return token, true, length;
+			}
+			else {
+				return null, false, 0;
+			}
+		}
+
+		get_keyword :: ( lexeme: string ) -> ( token: *Token, match: bool, length: int ) {
+
+			length: int = 0;
+			
+			if string_compare( lexeme, "set-basis", 9 ) == 0 {
+				length = 9;
+
+				token := New(Keyword_Token);
+				token.kind = .Keyword;
+				token.value = string_copy( lexeme, length );
+
+				return token, true, length;
+			}
+			else
+			if string_compare( lexeme, "set-dimension", 13 ) == 0 {
+				length = 13;
+
+				token := New(Keyword_Token);
+				token.kind  = .Keyword;
+				token.value = string_copy( lexeme, length );
+				
+				return token, true, length;
+			}
+			else {
+				return null, false, length;
+			}
+		}
+
+		get_identifier :: ( lexeme: string ) -> ( token: *Token, match: bool, length: int ) {
+		
+			length: int = lexeme.count;
+			token := New(Identifier_Token);
+			token.kind  = .Identifier;
+			token.value = string_copy( lexeme, lexeme.count );
+
+			return token, true, length;
+		}
+		
+		token: *Token = null;
+		match: bool = false;
+		token_length: int = 0;
+
+		token, match, token_length = get_operator( lexeme );
+		if match { return token, token_length; }
+
+		token, match, token_length = get_separator( lexeme );
+		if match { return token, token_length; }
+
+		token, match, token_length = get_literal( lexeme );
+		if match { return token, token_length; }
+
+		token, match, token_length = get_keyword( lexeme );
+		if match { return token, token_length; }
+
+		// catch-all for now
+		// in this expression "3.14+(e1R7^e1)" from e1 onwards is being read as a single identifier
+		token, match, token_length = get_identifier( lexeme );
+		if match { return token, token_length; }
+	}
+
+	tokens: [..] *Token;
+	token: *Token;
+	token_length: int;
+	cursor: string = expression;
+	while cursor {
+		cursor = skip_spaces( cursor );
+
+		lexeme := cursor;
+		while cursor && !is_whitespace( cursor ) {
+			advance( *cursor, 1 );
+		}
+		lexeme.count = cursor.data - lexeme.data;
+
+		// lexeme is a string with no whitespace characters, could contain multiple tokens.
+		// example: lexeme = "3^e1" which is 3 separate tokens
+		while lexeme {
+			token, token_length = generate_token( lexeme );
+			array_add( *tokens, token );
+
+			advance( *lexeme, token_length );
+		}
+	}
+
+	// so this is getting turned into '3^e1' '+' '2^e2'
+	// to be lexed correctly it would need to be 3 ^ e1 + 2 ^ e2, which i do NOT like
+	// assuming whitespace when it isn't there
+	// do we need an additional step in here?
+	// or do we need to split this apart and iteratively break this 'word' into it's constituent parts, that's another way to do it
+	//
+	// so two approaches then i need to actually 'work' ... bleh
+	// (1) complicate this outer loop with logic to handle this 'word' boundary problem
+	// (2) get the 'word' then do additional processing in the evaluator/generate_token step to break it apart into the constituent components
+	//    so the proces would break into 'words' then to an inter-word processing on it (try that route for now)
+
+/*
+	for token: tokens {
+		if token.kind == {
+			case Token_Kind.Literal; 	  		{ print( "Literal\n" ); }
+			case Token_Kind.Identifier; 		{ print( "Identifier\n" ); }
+			case Token_Kind.Keyword;    		{ print( "Keyword\n"    ); }
+			case Token_Kind.Exterior_Product;   { print( "Exterior Product\n"   ); }
+			case Token_Kind.Plus;  				{ print( "Plus\n"  ); }
+		}
+	}
+*/
+
+	return tokens;
+}
+
+// lexer
+//  scanner   	   (separate out the string)
+//  generate_token (generate a token based on what you have there 
+//   this can do three things 
+//    (1) Generate a token with a value
+//    (2) Generate a token without a value
+//    (3) Suppress the string like comments and stuff and just get rid of it entirely
 
 init_unary_operator :: ( node: *Unary_Operator_Node, operation: Unary_Op, operand: *Expression_Node ) {
 
@@ -204,13 +513,7 @@ init_k_element :: ( node: *K_Vector_Node, grade: int, coefficient: float, basis_
 
 
 // parsing:
-skip_spaces :: ( s: string ) -> ( cursor: string ) {
-	cursor := s;
-	while cursor && (cursor[0] == #char " " || cursor[0] == 9) { // horizontal tab
-		advance( *cursor, 1 );
-	}
-	return cursor;
-}
+
 
 string_compare :: ( s1: string, s2: string, n: int ) -> ( result: int, success: bool ) {
 
@@ -425,7 +728,7 @@ n_choose_k :: (n: int, k: int) -> (value: int) {
     return (n * n_choose_k(n-1, k-1)) / k;
 }
 
-init_dimension :: ( N: int ) {
+set_dimension :: ( N: int ) {
 
 	// Implmentation uses a single 64-bit integer to represent basis-one-elements.
 	// Dimension must be a positive integer and less than 64.
@@ -444,7 +747,7 @@ init_dimension :: ( N: int ) {
 	return;
 }
 
-init_basis_one_elements :: ( one_element_symbols: [] string ) {
+set_basis_one_elements :: ( one_element_symbols: [] string ) {
 
 	// TODO: check that there aren't duplicates passed in here by the caller
 
@@ -1267,8 +1570,8 @@ run_tests :: () {
 
 	// 2D tests
 	{
-		init_dimension( N = 2 );
-		init_basis_one_elements( string.["e1","e2"] );
+		set_dimension( N = 2 );
+		set_basis_one_elements( string.["e1","e2"] );
 
 		expression: string;
 		result:     string;
@@ -1427,7 +1730,44 @@ run_tests :: () {
 	return;
 }
 
+// so this actually has to be a console application with a while loop and everything
+// and then we runtime interpret certain parts of it
+//
+
+// so typically you have a program that is in a file and you do something like 
+//  lex
+//  parse
+//  typecheck
+//  link
+//  generate executable file
+//
+// but in this case we want an interactive application which needs to loop
+// so the loop goes something like
+//  Enter information
+//  Hit enter
+//  Scan for keywords
+//  execute those keywords
+//  eval will trigger the token generation, ast generation, application and evaluation or something like that
+
 main :: () {
+
+	s: string = "Hello Worldstar";
+	lex( s );
+
+	s = "3^e1 + 2^e2";
+	lex( s );
+
+	s = "set-basis();";
+	tokens := lex( s );
+	print( "Debug\n" );
+
+	s = "3";
+	tokens = lex( s );
+	print( "Debug\n" );
+
+	s = "3.14+(e1R7^e1);";
+	tokens = lex( s );
+	print( "Debug" );
 
 	print( "Running tests...\n" );
 	run_tests();

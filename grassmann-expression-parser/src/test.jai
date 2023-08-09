@@ -199,6 +199,19 @@ span :: ( values: [] int, span: int ) -> ( k_span: [..] int ) {
 
 main :: () {
 
+	Test :: enum { 
+		One;
+		Two;
+	}
+
+	Type1 :: struct {
+		test: Test;
+		s: string;
+	}
+
+	print( "Size of (string) == %\n", size_of(string) );
+	print( "Size of (type1)  == %\n", size_of(Type1) );
+
 	{
 		Vector3  :: struct { x,y,z: float; }
 
