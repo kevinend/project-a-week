@@ -1,6 +1,15 @@
 #scope_export
 
 
+// @Incomplete: Jai doesn't have an abstraction for reading from stdin yet...
+/*
+        #if OS == .WINDOWS {
+            handle := GetStdHandle(STD_INPUT_HANDLE); // GetStdHandl
+            bytes_read: u32;
+            success := ReadFile(handle, buffer.data + input.count, cast(u32) (buffer.count - input.count), *bytes_read, null);
+
+*/
+
 // Powers of 2
 // 2^1 = 2 
 // 2^2 = 4
@@ -32,12 +41,6 @@
 //  (6) e1e3   = 5
 //  (7) e2e3   = 6
 //  (8) e1e2e3 = 7
-
-// what i set up is cute but it isn't exaclty what you would want to do
-// well i'm honestly not sure,
-// could you have a k-vector and just that?
-// or should we have different types, in reality it is a single integer value
-// in either case, so maybe it isn't terrible
 
 // if we break it off into several different'types then the mapping is into a new type
 // you would have the 1-vector
@@ -130,17 +133,6 @@ K_Vector :: struct {
 // if they are separate you can't necessarily do that...hmm
 // you don't need the offset lookups either
 
-// so you have the mapping but how do you do things like complements?
-
-/*
-	e1	  e2   e3
-    e1e2 e1e3 e1e2 (maybe it is easier because you just move both at the same time), how many bits are set in this one, move both and call it a day
-    also you don't know exactly how many N-vectors you will have generically speaking
-
-    you know you have some k-vectors, some of those might be vectors, some might be bivectors, you might not have trivectors
-    then you need to account for them, it honestly is probably easier to go generic K_Vector route
-*/
-
 power :: ( a: int, b: int ) -> (c: int) {
 
 	c: int = 1;
@@ -164,40 +156,441 @@ choose :: (n: int, k: int) -> (value: int) {
 // together, if we end up representing bivectors and stuff differently this may all work out with using the span...
 //
 
-span :: ( values: [] int, span: int ) -> ( k_span: [..] int ) {
+Vector2D :: struct { x: int; y: int; }
 
-	k_span: [..] int;
+Vector_Type :: enum {
+	 OneD;
+	 TwoD;
+	 ThreeD;
+}
 
-	span_element: int;
-	slice: [] int;
-	for i: 0..values.count-1 {
-		base: int = values[i];
-		span_element = base;
-		for j: i+1..values.count-1 {
-			slice.data  = *values[j];
-			slice.count =  values.count-1;
+recurse :: ( x: int )  {
+	if x == 0 { return; }
+	print( "x == %\n", x );
+	recurse( x-1 ); // tail recursion, the next instruction is outside of there so you don't see the stack
+	print( "Tail Recursion Unwind\n" );
+}
 
-			k: int = 0;
-			while k < (span-1) && slice.count >= (span-1) {
-				span_element += slice[k];
-				k +=1;
+// Token is just an anonymous union of the values
+// need to know the keywords ahead of time but we don't know the values
+/*
+	process is
+	dimension(4);
+	basis_elements(e1,e2,e3,e4);
+
+Loop over this part:
+	L1 = (e1^e2) + (e1^e2);
+	L2 = (e3)
+	L  = L1 ^ L2
+	R  = eval(L); // print results and store in R
+
+*/
+
+// so for the keyword we don't need to know anything, the basis elements are NOT key words
+// read an identifier
+// when we parse we check if it is a basis element, then we return the value
+// otherwise we subsitute the value in and parse that I guess
+// maybe that flow changes not sure though
+
+Line_Number 	 :: #type, distinct int;
+Character_Index  :: #type, distinct int;
+
+Range :: struct(T: Type) {
+	start: T;
+	end:   T;
+}
+
+Token_Type :: enum u8 {
+
+	Error;
+
+	Operator_Plus;
+	Operator_Minus;
+	Operator_Exterior_Product;
+	Operator_Regressive_Product;
+	Operator_Interior_Product;
+	Operator_Left_Complement;
+	Operator_Right_Complement;
+
+	Identifier;
+	Number;
+
+	Keyword_Basis_Elements;
+	Keyword_Eval;
+	Keyword_Exit;
+	Keyword_Help;
+	Keyword_Dimension;
+	Keyword_Print;
+}
+
+Token :: struct {
+	
+	type: Token_Type = .Error;
+
+	line_number: 	 Range(Line_Number);
+	character_index: Range(Character_Index);
+
+	union {
+		identifier: string;
+		number:     float;
+	}	
+}
+
+// he doesn't have stuff to work with console input...
+// jesus christ i'd have to deal with the 
+// which kind of sucks dude 
+// but i guess we could just set up a ring buffer?
+// a buffer that overwrites itself and use his input to grab the keyboard input, i guess?
+
+// his lexer doesn't output the tokens it just puts them in a list and iterates through them
+// we want to keep the tokens around but we want a buffer of the tokens
+// so we can say there are a maximum number of concurrent tokens of whatever, then we just reset and keep track of the
+// number of tokens
+
+// this value is arbitrary but it if you have input like the following:
+// L  = (e1^e2) + (e3);
+// L1 = L ^ (e4);
+// eval(L1);
+
+// do we want to convert L into a tree structure? and have L1 point into it? I am undecided on the details here atm
+
+MAX_NUM_TOKENS_PER_EXPRESSION :: 100; // temp token buffer for the current expression; reset/clear on each subsequent expression
+MAX_IDENTIFIER_LENGTH         ::  10;
+Lexer :: struct {
+
+	current_line_number: 	 Line_Number;
+	current_character_index: Character_Index;
+
+	input: string;
+	input_cursor: int;
+
+	tokens: [MAX_NUM_TOKENS_PER_EXPRESSION] Token;
+	num_tokens: int = 0;
+
+	temp_identifier_buffer[MAX_IDENTIFIER_LENGTH];
+}
+
+// Honestly this is odd to admit but i don't write too many interactive programs so this is kind of interesting
+// not sure the overall structure though this looks a little bit janky atm
+// TODO: we still don't have a way to capture standard input in this scheme
+// While 1, do the following
+//  print splash page/help
+//   while input != "exit" {
+//		while dimension == -1 || basis_elements.count != dimension {
+//			prompt user to enter this information
+//			dimension = 4;
+//			basis_elements = e1,e2,e3,e4;
+//		}
+//     read the user's input
+//     lex the input into a sequence of tokens
+//	   check for keywords like dimension, basis_elements, exit	 
+//  }
+
+read_line :: ( file: File ) -> ( user_input: string ) {
+
+	// Read the input from the user through the terminal
+	user_input: string;
+	user_input.data = user_input_buffer.data;	
+	
+	while true {
+		bytes_read: u32;
+		success := ReadFile( file.handle, user_input_buffer.data, cast(u32)USER_INPUT_BUFFER_SIZE, *bytes_read, null );
+		if bytes_read {
+			user_input.count = bytes_read;
+			if user_input.data[user_input.count-1] == #char "\n" { // read a whole line
+				user_input.count -= CARRIAGE_RETURN_AND_NEWLINE;
+				break; 
 			}
+			else {
+				// Input exceeds the fixed buffer length
+				// Ignore the input, flush stdin, and continue to the next iteration
+				print( "Expression length exceeded limit of % characters ignoring input\n", MAX_USER_INPUT_LENGTH );
+					
+				user_input.count = 0;
 
-			if k == span-1 {
-				array_add( *k_span, span_element );
-				span_element = base; // reset to the base 1-element
+				// there has to be a better way to flush stdin...
+				temp: u8;
+				success := ReadFile( file.handle, *temp, 1, *bytes_read, null );
+				while temp != #char "\n" { // do I need to check EOF as well???
+					success = ReadFile( file.handle, *temp, 1, *bytes_read, null );
+				}
+
+				continue;
 			}
 		}
 	}
 
-	return k_span;
+	return user_input;
 }
 
-// 1, 2, 4, 8
+set_input_from_string :: ( lexer: *Lexer, user_input: string ) {
 
+	lexer.current_line_number 	= 1;
+	lexer.current_character_index = 0;
 
+	lexer.input = user_input;
+	lexer.input_cursor = 0;
+
+	return;
+}
+
+// this may need additional error handling in here...
+peek_next_character :: inline ( lexer: *Lexer ) -> (c: u8) {
+	return lexer.input[lexer.input_cursor];
+}
+
+consume_character :: inline ( lexer: *Lexer ) {
+	lexer.input_cursor += 1;	
+}
+
+is_remaining_input :: inline ( lexer: *Lexer ) -> ( remaining_characters: int ) {
+	return lexer.input.count - lexer.input_cursor;
+}
+
+begins_identifier :: inline ( c: u8 ) -> ( yes_no: bool ) {
+	return is_alpha( c ) ||  c == #char "_";
+}
+
+compose_identifier_token :: ( lexer: *Lexer ) -> ( token: Token ) {
+
+	continues_identifier :: ( c: u8 ) -> ( yes_no: bool ) {
+		return is_alnum( c ) || c == #char "_";
+	}
+
+	identifier: string;
+	identifier.data  = lexer.temp_identifier_buffer;
+	identifier.count = 0; 
+
+	c := peek_next_character( lexer );
+	while continues_identifier( c ) {
+		if identifier.count > MAX_IDENTIFIER_LENGTH {
+			break;
+		}
+
+		identifier[identifier.count] = c;
+		identifier.count += 1;
+
+		consume_character( lexer );
+		c = peek_next_character( lexer );
+	}
+
+	assert( identifier.count <= MAX_IDENTIFIER_LENGTH );
+
+	token: Token;
+	token.type 		 = .Identifier;
+	token.identifier = identifier; // should we string copy this? or add it to a set???
+
+	return token;
+}
+
+add_token :: ( lexer: *Lexer, token: Token ) {
+
+	assert( lexer.num_tokens < MAX_NUM_TOKENS_PER_EXPRESSION );
+	lexer.tokens[lexer.num_tokens] = token;
+	lexer.num_tokens += 1;
+
+	return;	
+}
+
+generate_tokens :: ( lexer: *Lexer ) {
+
+	c: u8;
+	token: Token;
+	while true {
+	 	
+	 	c = peek_next_character( lexer );
+		while is_remaining_input( lexer ) && is_space( c ) {
+			consume_character( lexer );
+			c = peek_next_character( lexer );
+		}
+
+		if !is_remaining_input( lexer ) {
+			// we should make a token here marking the end of the input
+			break;
+		}
+
+		if begins_identifier( c ) {
+			token = compose_identifier_token( lexer );
+			add_token( lexer, token );
+		}
+
+		consume_character( lexer );
+	}
+
+	print( "The input cursor value is %\n", input_cursor );
+
+	return;	
+}
+
+// new_identifier_token
+
+MAX_USER_INPUT_LENGTH		:: 8;
+CARRIAGE_RETURN_AND_NEWLINE :: 2;
+USER_INPUT_BUFFER_SIZE 		:: MAX_USER_INPUT_LENGTH + CARRIAGE_RETURN_AND_NEWLINE;
+
+user_input_buffer: [USER_INPUT_BUFFER_SIZE] u8;
+
+// i still don't understand how to use the symbol table effectively
+// i also don't know how to do the string thing he suggested either
+// symbol table
+//  L: value
 
 main :: () {
+
+	std_in_handle := GetStdHandle( STD_INPUT_HANDLE );
+	std_in := File.{ handle = std_in_handle };
+
+	lexer: Lexer;
+	user_input: string;
+	while user_input != "exit" {
+
+		user_input = read_line( std_in );
+
+		set_input_from_string( *lexer, user_input );
+		generate_tokens( *lexer );
+
+		// don't exactly want to parse this whole thing yet.. hmmm...
+		// this guy made an interesting remark about strings, instead of comparing strings you just compare pointers
+		// as a way to save the comparison
+		// just want to check if the 
+
+		// if is_environment_directive( tokens ) { update the environment }
+		// else
+		// if tokens[0] == "eval" { eval_expression( user_input ) }
+		// else 
+		// if environment_configs
+		//   update the environment
+		// else
+		// if 
+	}
+		
+
+
+
+/*
+	{
+		MAX_INPUT_LENGTH 			:: 8;
+		CARRIAGE_RETURN_AND_NEWLINE :: 2;
+		BUFFER_SIZE 				:: MAX_INPUT_LENGTH + CARRIAGE_RETURN_AND_NEWLINE;
+
+		buffer: [BUFFER_SIZE] u8; 
+		input: string;
+		input.data = buffer.data;
+
+		handle := GetStdHandle( STD_INPUT_HANDLE );
+		file := File.{ handle = handle };
+		while true {
+			bytes_read: u32;
+			success := ReadFile( handle, buffer.data, cast(u32)(BUFFER_SIZE), *bytes_read, null );
+			if bytes_read {
+				input.count = bytes_read;
+				if input.data[input.count-1] == #char "\n" {
+					// valid input
+					print( "Valid input\n" );	
+				}
+				else {
+					// Input exceeds the fixed buffer length
+					// Ignore the input, flush stdin, and continue to next iteration
+
+					print( "Expression length exceeded limit of % characters ignoring input\n", MAX_INPUT_LENGTH );
+					
+					input.count = 0;
+
+					// there has to be a better way to flush stdin...
+					temp: u8;
+					success := ReadFile( handle, *temp, 1, *bytes_read, null );
+					while temp != #char "\n" { // do I need to check EOF as well???
+						success = ReadFile( handle, *temp, 1, *bytes_read, null );
+					}
+
+					continue;
+				}
+			}
+
+			if input == "exit" { break; }
+			else 			   { print( "Input == %\n", input ); } 
+		}
+
+		// so this is our 'get_user_input_from_console()'
+	}
+*/
+	
+	{
+		values: [5] int;
+		print( "Values.count == %\n", values.count );
+	}
+
+	// all i want to do is figure out how to debug an array using remedybg
+	// so it can't figure out this array type, i wonder if we just put a size on the data field?
+	// yep, that worked, thank you Casey for that
+	// what if the data type is more complex like a simple vector2D or something?
+	// okay i had to move the type to the top-level, can't handle the type in the sub-scope, whatever no biggie
+
+	recurse( 3 ); // so you can lock a value, you can use {*} to find it in any location
+	// that is cool to see what is loaded in the gamestate or something like why the eff don't i see the assets
+	// you can also change the memory format specifier, now I can actually look at token values
+	// what if we have an array of pointers?
+
+	// so i think part of it was that i was getting flustered and not thinking clearly about what i wanted to 
+	// actually do. Just slow down, nothing has to be perfect but just give it your best shot every day and you
+	// will make it. I promise!!!
+
+	// some more testing with the features that i want	
+	
+
+	r: Range(int);
+	r.start = 0;
+	r.end   = 10;
+
+	{
+		values: [5] int;
+		for i: 0..4 {
+			values[i] = i+1;
+		}
+		print( "Values == %\n", values );
+	}
+
+	{
+		values: [..] int;
+		for i: 0..4 {
+			array_add(*values, (i+1) );
+		}
+		print( "Values == %\n", values );
+	}
+
+	{
+		values: [..] Vector2D;
+		for i: 0..4 {
+			v := Vector2D.{ x = (i+1), y = (i+1)*10 };
+			array_add(*values, v );
+		}
+		print( "Values == %\n", values );
+	}
+
+	{
+		values: [..] *Vector2D;
+		for i: 0..4 {
+			v := New(Vector2D);
+			v.x = (i+1);
+			v.y = (i+1) * 10;
+			array_add( *values, v );
+		}
+		print( "Values == %\n", values );
+	}
+
+	{
+		values: [..] Vector_Type;
+		v1 := Vector_Type.OneD;
+		v2 := Vector_Type.TwoD;
+		v3 := Vector_Type.ThreeD;
+
+		array_add( *values, v1 );
+		array_add( *values, v2 );
+		array_add( *values, v3 );
+
+		print( "Values == %\n", values );
+
+	}
 
 	Test :: enum { 
 		One;
@@ -332,9 +725,6 @@ main :: () {
 
 	print( "Values == %\n", values );
 
-	k_span := span( values, 2 );
-	print( "k_span == %\n", k_span );
-
 	// we want to say something like
 	// bit = offsets[grade]
 
@@ -382,6 +772,8 @@ main :: () {
 
 #scope_file
 #import "Basic";
+#import "File";
+#import "Windows";
 
 
 

@@ -1749,7 +1749,39 @@ run_tests :: () {
 //  execute those keywords
 //  eval will trigger the token generation, ast generation, application and evaluation or something like that
 
+// how cool i stumbled across his example which is a sample lexer that is much more involved than the one i was writing
+// he solved that problem in kind of a unique way i thought
+// atom1 --> point these to keywords effectively (whatever an atom is)
+// atom2 --> 
+// atom3 -->
+//
+// the tokens he did were simple too
+// KEYWORD_IF
+// KEYWORD_SET_DIMENSION()
+// KEYWORD_SET_BASIS()
+//
+// also tracks the start and end of the Token from the input
+// Line0, Character0
+// Line1, Character1
+
+// he did it based on length which might work
+// if length == {
+//   case 9; 
+//		if name == set_basis
+//   case 12;
+//		if name == set_dimension
+
+
 main :: () {
+
+	// first step is to try and make this whole thing interactive, so it has to be a loop
+	input: string;
+	i: int = 0;
+	while input != "exit" {
+		if i == 5 { break; }
+		print( "Running!" );
+		i += 1;
+	}
 
 	s: string = "Hello Worldstar";
 	lex( s );
