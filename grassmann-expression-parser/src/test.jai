@@ -267,7 +267,7 @@ Lexer :: struct {
 	tokens: [MAX_NUM_TOKENS_PER_EXPRESSION] Token;
 	num_tokens: int = 0;
 
-	temp_identifier_buffer[MAX_IDENTIFIER_LENGTH];
+	temp_identifier_buffer: [MAX_IDENTIFIER_LENGTH] u8;
 }
 
 // Honestly this is odd to admit but i don't write too many interactive programs so this is kind of interesting
@@ -334,9 +334,14 @@ set_input_from_string :: ( lexer: *Lexer, user_input: string ) {
 	return;
 }
 
-// this may need additional error handling in here...
-peek_next_character :: inline ( lexer: *Lexer ) -> (c: u8) {
-	return lexer.input[lexer.input_cursor];
+peek_next_character :: inline ( lexer: *Lexer ) -> (success: bool, c: u8) {
+	
+	if !is_remaining_input( lexer ) { 
+		return false, 0;	
+	}
+	else {
+		return true, lexer.input[lexer.input_cursor];
+	}
 }
 
 consume_character :: inline ( lexer: *Lexer ) {
@@ -357,21 +362,32 @@ compose_identifier_token :: ( lexer: *Lexer ) -> ( token: Token ) {
 		return is_alnum( c ) || c == #char "_";
 	}
 
+	success: bool;
+	c: u8;
+
 	identifier: string;
-	identifier.data  = lexer.temp_identifier_buffer;
+	identifier.data  = lexer.temp_identifier_buffer.data;
 	identifier.count = 0; 
 
-	c := peek_next_character( lexer );
-	while continues_identifier( c ) {
+	// add the leading character which can only be an underscore, a-z or A-Z
+	success, c = peek_next_character( lexer );
+	identifier.data[identifier.count] = c; // .data to ignore array bounds checking
+	identifier.count += 1;
+	consume_character( lexer );
+
+	while is_remaining_input( lexer ) {
 		if identifier.count > MAX_IDENTIFIER_LENGTH {
+			// consume all the rest of the identifier???
 			break;
 		}
 
-		identifier[identifier.count] = c;
-		identifier.count += 1;
-
-		consume_character( lexer );
-		c = peek_next_character( lexer );
+		success, c = peek_next_character( lexer );
+		if success && continues_identifier( c ) {
+			identifier.data[identifier.count] = c; // .data to ignore array bounds checking
+			identifier.count += 1;
+			consume_character( lexer );
+		}
+		else { break; }
 	}
 
 	assert( identifier.count <= MAX_IDENTIFIER_LENGTH );
@@ -395,13 +411,14 @@ add_token :: ( lexer: *Lexer, token: Token ) {
 generate_tokens :: ( lexer: *Lexer ) {
 
 	c: u8;
+	success: bool;
 	token: Token;
-	while true {
+	while true { 
 	 	
-	 	c = peek_next_character( lexer );
-		while is_remaining_input( lexer ) && is_space( c ) {
+	 	success, c = peek_next_character( lexer );
+		while success && is_space( c ) {
 			consume_character( lexer );
-			c = peek_next_character( lexer );
+			success, c = peek_next_character( lexer );
 		}
 
 		if !is_remaining_input( lexer ) {
@@ -413,11 +430,9 @@ generate_tokens :: ( lexer: *Lexer ) {
 			token = compose_identifier_token( lexer );
 			add_token( lexer, token );
 		}
-
-		consume_character( lexer );
 	}
 
-	print( "The input cursor value is %\n", input_cursor );
+	print( "The input cursor value is %\n", lexer.input_cursor );
 
 	return;	
 }
