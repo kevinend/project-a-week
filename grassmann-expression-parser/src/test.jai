@@ -133,15 +133,7 @@ K_Vector :: struct {
 // if they are separate you can't necessarily do that...hmm
 // you don't need the offset lookups either
 
-power :: ( a: int, b: int ) -> (c: int) {
 
-	c: int = 1;
-	for i: 0..b-1 {
-		c *= a;	
-	}
-
-	return c;
-}
 
 // n-choose-k
 // build the list of offsets
@@ -171,47 +163,7 @@ recurse :: ( x: int )  {
 	print( "Tail Recursion Unwind\n" );
 }
 
-Line_Number 	 :: #type, distinct int;
-Character_Index  :: #type, distinct int;
 
-Range :: struct(T: Type) {
-	start: T;
-	end:   T;
-}
-
-Token_Type :: enum u8 {
-
-	Error;
-	End_Of_Input;
-	
-	Identifier;
-
-	Keyword_Dimension;
-	Keyword_Basis_Elements;
-	Keyword_Help;
-
-	Basis_Element;
-
-	Number;
-
-	// separators
-	Semicolon;
-	Open_Paren;
-	Close_Paren;
-	Open_Square_Brace;
-	Close_Square_Brace;
-	Comma;
-
-	// operators
-	Plus;
-	Minus;
-	Assign; // single equals sign
-	Exterior_Product; 
-	Regressive_Product;
-	Interior_Product;
-	Left_Complement;
-	Right_Complement;
-}
 
 /*
 	// so the default now is that we just read an identifier
@@ -247,426 +199,11 @@ Token_Type :: enum u8 {
 */
 
 
-Token :: struct {
-	
-	type: Token_Type = .Error;
 
-	line_number: 	 Range(Line_Number);
-	character_index: Range(Character_Index);
 
-	union {
-		identifier:  		 string;
-		number:      		 int;
-		basis_element_index: int;
-	}	
-}
 
-// this value is arbitrary but it if you have input like the following:
-// L  = (e1^e2) + (e3);
-// L1 = L ^ (e4);
-// eval(L1);
 
-// do we want to convert L into a tree structure? and have L1 point into it? I am undecided on the details here atm
 
-MAX_NUM_TOKENS_PER_EXPRESSION :: 100; // temp token buffer for the current expression; reset/clear on each subsequent expression
-TEMP_BUFFER_LENGTH         	  ::  64; // dictates the size of identifiers and the number of digits in a number
-Lexer :: struct {
-
-	current_line_number: 	 Line_Number;
-	current_character_index: Character_Index;
-
-	input: string;
-	input_cursor: int;
-
-	tokens: [MAX_NUM_TOKENS_PER_EXPRESSION] Token;
-	num_tokens: int = 0;
-
-	temp_buffer: [TEMP_BUFFER_LENGTH] u8;
-}
-
-read_line :: ( file: File ) -> ( user_input: string ) {
-
-	// Read the input from the user through the terminal
-	user_input: string;
-	user_input.data = user_input_buffer.data;	
-	
-	while true {
-		bytes_read: u32;
-		success := ReadFile( file.handle, user_input_buffer.data, cast(u32)USER_INPUT_BUFFER_SIZE, *bytes_read, null );
-		if bytes_read {
-			user_input.count = bytes_read;
-			if user_input.data[user_input.count-1] == #char "\n" { // read a whole line
-				user_input.count -= CARRIAGE_RETURN_AND_NEWLINE;
-				break; 
-			}
-			else {
-				// Input exceeds the fixed buffer length
-				// Ignore the input, flush stdin, and continue to the next iteration
-				print( "Expression length exceeded limit of % characters ignoring input\n", MAX_USER_INPUT_LENGTH );
-					
-				user_input.count = 0;
-
-				// there has to be a better way to flush stdin...
-				temp: u8;
-				success := ReadFile( file.handle, *temp, 1, *bytes_read, null );
-				while temp != #char "\n" { // do I need to check EOF as well???
-					success = ReadFile( file.handle, *temp, 1, *bytes_read, null );
-				}
-
-				continue;
-			}
-		}
-	}
-
-	return user_input;
-}
-
-set_input_from_string :: ( lexer: *Lexer, user_input: string ) {
-
-	lexer.current_line_number 	= 1;
-	lexer.current_character_index = 0;
-
-	lexer.input = user_input;
-	lexer.input_cursor = 0;
-
-	return;
-}
-
-peek_next_character :: inline ( lexer: *Lexer ) -> (success: bool, c: u8) {
-	
-	if !is_remaining_input( lexer ) { 
-		return false, 0;	
-	}
-	else {
-		return true, lexer.input[lexer.input_cursor];
-	}
-}
-
-consume_character :: inline ( lexer: *Lexer ) {
-	lexer.input_cursor += 1;	
-}
-
-is_remaining_input :: inline ( lexer: *Lexer ) -> ( remaining_characters: int ) {
-	return lexer.input.count - lexer.input_cursor;
-}
-
-begins_identifier :: inline ( c: u8 ) -> ( yes_no: bool ) {
-	return is_alpha( c ) ||  c == #char "_";
-}
-
-compose_identifier_keyword_or_basis_symbol_token :: ( lexer: *Lexer ) -> ( token: Token ) {
-
-	continues_identifier :: ( c: u8 ) -> ( yes_no: bool ) {
-		return is_alnum( c ) || c == #char "_";
-	}
-
-	is_identifier_keyword :: ( ident: string ) -> ( yes_no: bool, keyword_type: Token_Type ) {
-		
-		if ident == "Dimension" {
-			return true, .Keyword_Dimension;
-		}
-		else
-		if ident == "Basis_Elements" {
-			return true, .Keyword_Basis_Elements;
-		}
-		else 
-		if ident == "Help" {
-			return true, .Keyword_Help;
-		}
-		else {
-			return false, .Error;
-		}
-	}
-
-	is_identifier_basis_element :: ( ident: string ) -> ( yes_no: bool, basis_element_index: int ) {
-		
-		found: bool = false;
-		basis_element_index: int = -1;
-		for i: 0..space.basis_one_elements.count-1 {
-			if ident == space.basis_one_elements[i] {
-				found = true;
-				basis_element_index = i;
-				break;
-			}
-		}
-
-		return found, basis_element_index;
-	}
-
-	success: bool;
-	c: u8;
-
-	// alias temporary buffer; copy identifier into token once processed
-	t: [] u8;
-	t.data  = lexer.temp_buffer.data;
-	t.count = 0; 
-
-	while true {
-		if t.count > TEMP_BUFFER_LENGTH {
-			// consume rest of the identifier???
-			break;
-		}
-
-		success, c = peek_next_character( lexer );
-		if success && continues_identifier( c ) {
-			t.data[t.count] = c; // .data to ignore array bounds checking
-			t.count += 1;
-			consume_character( lexer );
-		}
-		else { break; }
-	}
-
-	assert( t.count <= TEMP_BUFFER_LENGTH );
-
-	token: Token;
-	token.type 		 = .Identifier;
-	token.identifier = copy_string( cast(string) t ); // maybe do this at the end if it is truly an identifier??? we copy it and throw it away in the case of keywords and basis elements atm.
-
-	is_keyword, keyword_type := is_identifier_keyword( token.identifier );
-	if is_keyword {
-		token.type = keyword_type;
-	}
-	else {
-		is_basis_element, index := is_identifier_basis_element( token.identifier );
-		if is_basis_element {
-			token.type = .Basis_Element;
-			token.basis_element_index = index; // see note above, wasting the string copy, we don't need the sybmol/identifier anymore
-			// maybe put this as the first check then do the keyword then default to the identifier??? hmm..
-		}
-	}
-
-	return token;
-}
-
-begins_number :: ( c: u8 ) -> ( yes_no: bool ) {
-	return is_digit( c );
-}
-
-compose_number_token :: ( lexer: *Lexer ) -> ( token: Token ) {
-
-	// This procedure can get very complicated trying to handle floats, hex, overflow, etc...
-	// As a first pass just handle integers.
-	// Convert the char representation of the numbers to integers as base 10.
-
-	continues_number :: inline ( c: u8 ) -> ( yes_no: bool ) {
-		// allow for 1000 and 1_000
-		// we parse identifiers before numbers so input like _123 would get handled as an identifier
-		return is_digit( c ) || c == #char "_";
-	}
-
-	success: bool;
-	c: u8;
-
-	t: [] u8;
-	t.data  = lexer.temp_buffer.data;
-	t.count = 0;
-
-	while true {
-		if t.count > TEMP_BUFFER_LENGTH {
-			// consume the rest of the digits?
-			break;
-		}
-
-		success, c = peek_next_character( lexer );
-		if success && continues_number( c ) {
-			t.data[t.count] = c - #char "0";
-			t.count += 1;
-			consume_character( lexer );
-		}
-		else {
-			break;
-		}
-	}
-
-	assert( t.count <= TEMP_BUFFER_LENGTH );
-
-	// pushed all the digits onto the temp buffer (converting from ascii to their integer values).
-	// walk the temp buffer and digits and build final number
-	// Ex. 123 --> 1*(10^2) + 2*(10^1) + 1*(10^0)
-
-	base:  int = 10;
-	exponent: int = t.count-1;
-	accumulator: int = 0;
-	for i: 0..t.count-1 {
-		accumulator += (t.data[i] * power(base, exponent));
-		exponent -= 1;
-	}
-
-	token: Token;
-	token.type   = .Number;
-	token.number = accumulator;
-
-	return token;
-}
-
-compose_separator_or_operator_token :: ( type: Token_Type ) -> ( token: Token ) {
-
-	token: Token;
-	token.type = type;
-
-	return token;
-}
-
-compose_end_of_input_token :: () -> ( token: Token ) {
-	
-	token: Token;
-	token.type = .End_Of_Input;
-	return token;
-}
-
-add_token :: ( lexer: *Lexer, token: Token ) {
-
-	assert( lexer.num_tokens < MAX_NUM_TOKENS_PER_EXPRESSION );
-	lexer.tokens[lexer.num_tokens] = token;
-	lexer.num_tokens += 1;
-
-	return;	
-}
-
-generate_tokens :: ( lexer: *Lexer ) {
-
-	clear_tokens :: ( lexer: *Lexer ) {
-		// Prior line's tokens get overwritten on every new input line.
-		// This could change in the future!
-		lexer.num_tokens = 0;
-	}
-
-	c0: u8;
-	success: bool;
-	token: Token;
-
-	clear_tokens( lexer );
-
-	while true {  	
-	 	
-	 	success, c0 = peek_next_character( lexer );
-		while success && is_space( c0 ) {
-			consume_character( lexer );
-			success, c0 = peek_next_character( lexer );
-		}
-
-		if !is_remaining_input( lexer ) {
-			token = compose_end_of_input_token();
-			add_token( lexer, token );
-			break;
-		}
-
-		if begins_identifier( c0 ) {
-			token = compose_identifier_keyword_or_basis_symbol_token( lexer );
-			add_token( lexer, token );
-			continue;	
-		}
-
-		if begins_number( c0 ) {
-			token = compose_number_token( lexer );
-			add_token( lexer, token );
-			continue;
-		}
-
-		c1: u8;
-		if c0 == {
-			// separators
-			case #char ";"; { 
-				consume_character( lexer );
-				token = compose_separator_or_operator_token( .Semicolon );
-				add_token( lexer, token );
-			}
-			case #char "("; {
-				consume_character( lexer );
-				token = compose_separator_or_operator_token( .Open_Paren );
-				add_token( lexer, token );
-			}
-			case #char ")"; {
-				consume_character( lexer );
-				token = compose_separator_or_operator_token( .Close_Paren );
-				add_token( lexer, token );
-			}
-			case #char "["; {
-				consume_character( lexer );
-				token = compose_separator_or_operator_token( .Open_Square_Brace );
-				add_token( lexer, token );
-			}
-			case #char "]"; {
-				consume_character( lexer );
-				token = compose_separator_or_operator_token( .Close_Square_Brace );
-				add_token( lexer, token );
-			}
-			case #char ","; {
-				consume_character( lexer );
-				token = compose_separator_or_operator_token( .Comma );
-				add_token( lexer, token );
-			}
-
-			// operators
-			case #char "+"; { 
-				consume_character( lexer );
-				token = compose_separator_or_operator_token( .Plus );
-				add_token( lexer, token );
-			}
-			case #char "-"; {
-				consume_character( lexer );
-				token = compose_separator_or_operator_token( .Minus );
-				add_token( lexer, token );
-			}
-			case #char "="; {
-				consume_character( lexer );
-				token = compose_separator_or_operator_token( .Assign );
-				add_token( lexer, token );
-			}
-			case #char "^"; { 
-				consume_character( lexer );
-				token = compose_separator_or_operator_token( .Exterior_Product ); 
-				add_token( lexer, token );
-			}
-			case #char "!"; {
-				// !^ is the regressive product (as in 'not the exterior product)
-				consume_character( lexer );
-
-				success, c1 = peek_next_character( lexer );
-				
-				if success && c1 == #char "^" {
-					consume_character( lexer );
-					token = compose_separator_or_operator_token( .Regressive_Product );
-					add_token( lexer, token );
-				}
-				// error here? if !success there is nothing left in the input and that character isn't valid
-			}
-			case #char "@"; {
-				consume_character( lexer );
-				token = compose_separator_or_operator_token( .Interior_Product );
-				add_token( lexer, token );
-			}
-			case #char "<"; {
-				// <<  is the left complement for now
-				consume_character( lexer );
-
-				success, c1 = peek_next_character( lexer );
-
-				if success && c1 == #char "<" {
-					consume_character( lexer );
-					token = compose_separator_or_operator_token( .Left_Complement );
-					add_token( lexer, token );
-				}
-				// error here?  if !success then there isn't another character and there should be
-			}
-			case #char ">"; {
-				// >> is the right complement for now
-				consume_character( lexer );
-
-				success, c1 = peek_next_character( lexer );
-
-				if success && c1 == #char ">" {
-					consume_character( lexer );
-					token = compose_separator_or_operator_token( .Right_Complement );
-					add_token( lexer, token );
-				}
-				// error here? if !success then there isn't another character and there should be
-			}
-		}
-	}
-
-	return;	
-}
 
 // good deal i think this is a good stopping place for now. Need to look at the parser
 // maybe put this stuff in a lexer.jai file for grassmann
@@ -680,12 +217,6 @@ generate_tokens :: ( lexer: *Lexer ) {
 	// maybe three sets of files? i don't know man just hanging around!!!
 
 */
-
-MAX_USER_INPUT_LENGTH		:: 50;
-CARRIAGE_RETURN_AND_NEWLINE :: 2;
-USER_INPUT_BUFFER_SIZE 		:: MAX_USER_INPUT_LENGTH + CARRIAGE_RETURN_AND_NEWLINE;
-
-user_input_buffer: [USER_INPUT_BUFFER_SIZE] u8;
 
 /*
 	Executive decision, ultimately create font to create the glyphs
@@ -702,95 +233,26 @@ user_input_buffer: [USER_INPUT_BUFFER_SIZE] u8;
 	(<< e1^e2^e3 !^ >> e1^e2) // definitely too messy for my liking but need to roll with it for now!
 */
 
-print_tokens :: ( lexer: *Lexer ) {
-
-	for i: 0..lexer.num_tokens-1 {
-		token := lexer.tokens[i];
-		if token.type == {
-			case .Error;              { print( "ERROR\n" ); }
-			case .End_Of_Input;       { print( "END_OF_INPUT\n" ); }
-			case .Semicolon; 		  { print( "SEMICOLON\n" );  }
-			case .Open_Paren;         { print( "OPEN_PAREN\n" ); }
-			case .Close_Paren; 		  { print( "CLOSE_PAREN\n" );}
-			case .Open_Square_Brace;  { print( "OPEN_SQUARE_BRACE\n" ); }
-			case .Close_Square_Brace; { print( "CLOSE_SQUARE_BRACE\n" ); }
-			case .Comma;			  { print( "COMMA\n" ); }
-			case .Identifier; 		  { print( "Token == %\n", token.identifier ); }
-			case .Keyword_Dimension;      { print( "KEYWORD_DIMENSION\n" ); }
-			case .Keyword_Basis_Elements; { print( "KEYWORD_BASIS_ELEMENTS\n" ); }
-			case .Basis_Element;          { print( "Basis elements %\n", token.basis_element_index ); }
-			case .Number;     		  { print( "Token == %\n", token.number ); }
-			case .Plus; 		 	  { print( "PLUS\n"  ); }
-			case .Minus;      		  { print( "MINUS\n" ); }
-			case .Assign;             { print( "ASSIGN\n" ); }
-			case .Exterior_Product;   { print( "EXTERIOR\n" ); }
-			case .Regressive_Product; { print( "REGRESSIVE\n" ); }
-			case .Interior_Product;   { print( "INTERIOR\n" ); }
-			case .Left_Complement;    { print( "LEFT COMPLEMENT\n" ); }
-			case .Right_Complement;   { print( "RIGHT COMPLEMENT\n" ); }
-		}
-	}
-
-	return;
-}
-
-set_grassmann_space :: ( N: int, basis_one_elements: [] string ) {
-
-	// set the dimension
-	space.dimension = N;
-
-	// initialize the basis_one_elements for the space and build the n-element
-	if space.basis_one_elements.count > 0 {
-		array_reset( *space.basis_one_elements );
-	}
-
-	space.n_element = 0;
-	for i: 0..N-1 {
-		array_add( *space.basis_one_elements, basis_one_elements[i] );
-		space.n_element |= (1 << i);	
-	}
-
-	return;
-}
-
-Grassmann_Space :: struct {
-	dimension: int;
-	basis_one_elements: [..] string;
-	n_element: int;
-}
-
-space: Grassmann_Space;
-
 main :: () {
 
 {
-	set_grassmann_space( N = 4, basis_one_elements = string.["e1","e2","e3","e4"] );
-
-	print( "The current dimension, using the global == %\n", space.dimension );
-	print( "Basis_one_elements == %\n", space.basis_one_elements );
-}
-
-{
-	std_in_handle := GetStdHandle( STD_INPUT_HANDLE );
-	std_in := File.{ handle = std_in_handle };
-
-	lexer: Lexer;
-	user_input: string;
-	while user_input != "exit" {
-
-		user_input = read_line( std_in );
-
-		set_input_from_string( *lexer, user_input );
-		generate_tokens( *lexer );
-
-		print_tokens( *lexer );	
+	values: [..] int;
+	for i: 0..4 {
+		array_add( *values, i+1 );
 	}
+
+	indirect: [] int = values; // does that typecheck
+	print( "Indirect == %\n", indirect );
+
+	// what happens if we add something after the assignment?
+	array_add( *values, 10 );
+
+	indirect = values;
+	print( "After update == %\n", indirect );
+
+	// we'd have to set it on every loop, which is a bit wasteful but whatever
 }
 
-{	
-	print( "Value == %\n", power(10,2) );
-}
-		
 {
 		values: [5] int;
 		print( "Values.count == %\n", values.count );
@@ -813,10 +275,6 @@ main :: () {
 
 	// some more testing with the features that i want	
 	
-
-	r: Range(int);
-	r.start = 0;
-	r.end   = 10;
 
 	{
 		values: [5] int;

@@ -259,6 +259,7 @@ is_whitespace :: ( s: string ) -> ( found: bool ) {
 	}
 }
 
+// instead of string copy just call memcpy?? we do it anyways
 string_copy :: ( s: string, n: int ) -> ( copy: string ) {
 
 	copy: string;
