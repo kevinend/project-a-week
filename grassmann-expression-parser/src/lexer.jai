@@ -60,7 +60,7 @@ Token :: struct {
 }
 
 MAX_NUM_TOKENS_PER_EXPRESSION :: 100;  // an expression is a single line of input
-TEMP_BUFFER_LENGTH         	  ::  64; // dictates the size of identifiers and the number of digits in a number
+LEXER_TEMP_BUFFER_LENGTH         	  ::  64; // dictates the size of identifiers and the number of digits in a number
 Lexer :: struct {
 
 	current_line_number: 	 Line_Number;
@@ -75,50 +75,7 @@ Lexer :: struct {
 	// 1-element symbols set at runtime by the user
 	basis_one_element_symbols: [] string;
 
-	temp_buffer: [TEMP_BUFFER_LENGTH] u8;
-}
-
-MAX_USER_INPUT_LENGTH		:: 50;
-CARRIAGE_RETURN_AND_NEWLINE :: 2;
-USER_INPUT_BUFFER_SIZE 		:: MAX_USER_INPUT_LENGTH + CARRIAGE_RETURN_AND_NEWLINE;
-
-user_input_buffer: [USER_INPUT_BUFFER_SIZE] u8;
-
-read_line :: ( file: File ) -> ( user_input: string ) {
-
-	// Read the input from the user through the terminal
-	user_input: string;
-	user_input.data = user_input_buffer.data;	
-	
-	while true {
-		bytes_read: u32;
-		success := ReadFile( file.handle, user_input_buffer.data, cast(u32)USER_INPUT_BUFFER_SIZE, *bytes_read, null );
-		if bytes_read {
-			user_input.count = bytes_read;
-			if user_input.data[user_input.count-1] == #char "\n" { // read a whole line
-				user_input.count -= CARRIAGE_RETURN_AND_NEWLINE;
-				break; 
-			}
-			else {
-				// Input exceeds the fixed buffer length
-				// Ignore the input, flush stdin, and continue to the next iteration
-				print( "Expression length exceeded limit of % characters ignoring input\n", MAX_USER_INPUT_LENGTH );
-					
-				user_input.count = 0;
-
-				// there has to be a better way to flush stdin...
-				temp: u8;
-				success := ReadFile( file.handle, *temp, 1, *bytes_read, null );
-				while temp != #char "\n" { // do I need to check EOF as well???
-					success = ReadFile( file.handle, *temp, 1, *bytes_read, null );
-				}
-
-				continue;
-			}
-		}
-	}
-
-	return user_input;
+	temp_buffer: [LEXER_TEMP_BUFFER_LENGTH] u8;
 }
 
 set_input_from_string :: ( lexer: *Lexer, user_input: string ) {
@@ -180,7 +137,7 @@ generate_tokens :: ( lexer: *Lexer ) {
 			token = compose_number_token( lexer );
 			add_token( lexer, token );
 			continue;
-		}
+		} 
 
 		c1: u8;
 		if c0 == {
@@ -393,7 +350,7 @@ compose_identifier_keyword_or_basis_symbol_token :: ( lexer: *Lexer ) -> ( token
 	t.count = 0; 
 
 	while true {
-		if t.count > TEMP_BUFFER_LENGTH {
+		if t.count > LEXER_TEMP_BUFFER_LENGTH {
 			// consume rest of the identifier???
 			break;
 		}
@@ -407,7 +364,7 @@ compose_identifier_keyword_or_basis_symbol_token :: ( lexer: *Lexer ) -> ( token
 		else { break; }
 	}
 
-	assert( t.count <= TEMP_BUFFER_LENGTH );
+	assert( t.count <= LEXER_TEMP_BUFFER_LENGTH );
 
 	token: Token;
 	token.type 		 = .Identifier;
@@ -461,7 +418,7 @@ compose_number_token :: ( lexer: *Lexer ) -> ( token: Token ) {
 	t.count = 0;
 
 	while true {
-		if t.count > TEMP_BUFFER_LENGTH {
+		if t.count > LEXER_TEMP_BUFFER_LENGTH {
 			// consume the rest of the digits?
 			break;
 		}
@@ -477,7 +434,7 @@ compose_number_token :: ( lexer: *Lexer ) -> ( token: Token ) {
 		}
 	}
 
-	assert( t.count <= TEMP_BUFFER_LENGTH );
+	assert( t.count <= LEXER_TEMP_BUFFER_LENGTH );
 
 	// pushed all the digits onto the temp buffer (converting from ascii to their integer values).
 	// walk the temp buffer and digits and build final number
