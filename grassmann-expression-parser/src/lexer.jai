@@ -1,66 +1,9 @@
 #scope_export
 
 // TODO: Never implmented the character and line number tracking on the tokens
-// TODO: I hate breaking stuff up because of this exact problem
-
-Line_Number 	 :: #type, distinct int;
-Character_Index  :: #type, distinct int;
-
-Range :: struct(T: Type) {
-	start: T;
-	end:   T;
-}
-
-Token_Type :: enum u8 {
-
-	Error;
-	End_Of_Input;
-	
-	Identifier;
-
-	Keyword_Dimension;
-	Keyword_Basis_Elements;
-	Keyword_Help;
-
-	Basis_Element;
-
-	Number;
-
-	// separators
-	Semicolon;
-	Open_Paren;
-	Close_Paren;
-	Open_Square_Brace;
-	Close_Square_Brace;
-	Comma;
-
-	// operators
-	Plus;
-	Minus;
-	Assign; // single equals sign
-	Exterior_Product; 
-	Regressive_Product;
-	Interior_Product;
-	Left_Complement;
-	Right_Complement;
-}
-
-Token :: struct {
-	
-	type: Token_Type = .Error;
-
-	line_number: 	 Range(Line_Number);
-	character_index: Range(Character_Index);
-
-	union {
-		identifier:  		 string;
-		number:      		 int;
-		basis_element_index: int;
-	}	
-}
 
 MAX_NUM_TOKENS_PER_EXPRESSION :: 100;  // an expression is a single line of input
-LEXER_TEMP_BUFFER_LENGTH         	  ::  64; // dictates the size of identifiers and the number of digits in a number
+LEXER_TEMP_BUFFER_LENGTH      ::  64; // dictates the size of identifiers and the number of digits in a number
 Lexer :: struct {
 
 	current_line_number: 	 Line_Number;
@@ -78,9 +21,10 @@ Lexer :: struct {
 	temp_buffer: [LEXER_TEMP_BUFFER_LENGTH] u8;
 }
 
-set_input_from_string :: ( lexer: *Lexer, user_input: string ) {
 
-	lexer.current_line_number 	= 1;
+lexer_set_input :: ( lexer: *Lexer, user_input: string ) {
+
+	lexer.current_line_number 	  = 1;
 	lexer.current_character_index = 0;
 
 	lexer.input = user_input;
@@ -89,7 +33,7 @@ set_input_from_string :: ( lexer: *Lexer, user_input: string ) {
 	return;
 }
 
-set_basis_one_element_symbols :: ( lexer: *Lexer, basis_one_element_symbols: [] string ) {
+lexer_set_basis_one_element_symbols :: ( lexer: *Lexer, basis_one_element_symbols: [] string ) {
 	
 	// basis_one_element symbols can change at runtime based on user input
 	// lexer needs to know about the current set of symbols
@@ -99,7 +43,7 @@ set_basis_one_element_symbols :: ( lexer: *Lexer, basis_one_element_symbols: [] 
 
 }
 
-generate_tokens :: ( lexer: *Lexer ) {
+lexer_generate_tokens :: ( lexer: *Lexer ) {
 
 	clear_tokens :: ( lexer: *Lexer ) {
 		// Prior line's tokens get overwritten on every new input line.
@@ -478,7 +422,3 @@ add_token :: ( lexer: *Lexer, token: Token ) {
 
 	return;	
 }
-
-#import "Basic";
-#import "File";
-#import "Windows"; // ReadFile()

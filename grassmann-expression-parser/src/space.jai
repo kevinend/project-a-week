@@ -9,6 +9,8 @@ Grassmann_Space :: struct {
 	n_element: int;
 }
 
+space: Grassmann_Space;
+
 set_grassmann_space :: ( space: *Grassmann_Space, N: int, basis_one_elements: [] string ) {
 	
 	// Invoked on application startup with a set of defaults.
@@ -32,4 +34,6 @@ set_grassmann_space :: ( space: *Grassmann_Space, N: int, basis_one_elements: []
 	return;
 }
 
-// the parser shouldn't need anything from it but the evaluator will
+#scope_file
+
+#import "Basic";

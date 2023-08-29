@@ -163,8 +163,6 @@ recurse :: ( x: int )  {
 	print( "Tail Recursion Unwind\n" );
 }
 
-
-
 /*
 	// so the default now is that we just read an identifier
 	// but then we need to make a determination whether it is a keyword 
@@ -195,14 +193,13 @@ recurse :: ( x: int )  {
 
 	For identifiers we want to keep track whether they need re-evaluated or not
 	which is just a simple flag.
-
 */
 
-
-
-
-
-
+// op codes 
+// so in his book
+// lexer --> parser --> compile --> interpreter
+// [string] --> [tokens] --> [AST] --> [ByteCode] --> [Output]
+//  ^----------------------^ then some loop back here for some reason that I didn't understand
 
 
 // good deal i think this is a good stopping place for now. Need to look at the parser
@@ -233,7 +230,254 @@ recurse :: ( x: int )  {
 	(<< e1^e2^e3 !^ >> e1^e2) // definitely too messy for my liking but need to roll with it for now!
 */
 
+/*
+	What is the current problem?
+	We want to introduce another step, compilation, prior to evaluation in our process.
+	In the compilation step we MUST be able to issue an operand and have it result in a value
+	So when you say something like:
+		OpAdd 1 3 then you get the result 4 on that stack machine
+		OpSub 1 4 then you get 3
+
+	In our case our 'objects' will be different, they will be K-Elements but it's possible that the elements
+	can't be directly summed
+	OpAdd e1 e2 ; what does this resolve to? do we return a string and allocat this out again or something?
+				  doesn't seem quite right
+
+	We don't have a representation for a Multi-Element or define what addition is among a Multi-vector
+	It is a pairwise assignment of coefficients but it isn't defined in the lexer or parser right now
+	We also don't have the ability to recognize a symbol like e1^e2^e3 as a single element
+	Ideally we'd like to be able to say e1e2e3 and have that be recognized as a single symbol
+	We just represent everything as forms of basis-one elements
+
+	Which doesn't necessarily seem wrong to me but we have to handle the multi-vectors on the other end somehow
+
+	So i thought if we got the dimension and the list of basis one elements would could build the basis elements 
+	
+	e1
+	e2
+	e3
+	e4
+	e1e2
+	e1e3 ...
+
+	then when we are lexing we could recognize the elements
+	if it isn't recognized as a single symbol then it is investigated further to separate out the component parts
+
+	so you would have a table that is like this
+
+		8, 16, 32, 64
+		1      0
+		e1	   1   (1 << 1)
+		e2     2   (1 << 2)
+		e3     3   (1 << 3)
+		e1e2   4   (1 << 4)
+		e1e3   5   (1 << 5)
+		e2e3   6   (1 << 6)
+		e1e2e3 7   (1 << 7)
+
+		and these indices represented the index, so you have a field that is like basis-elements
+
+		and you return the basis_elements as a bit field
+			e1, e1e2
+			the first bit and the 4th bit are set or something to that effect
+
+			which ultimately represents a multivector which is the sum
+			so give that element a grade of -1 (since it's grade is technically undefined)
+			when you wedge a product over it, you'd have to generate a list of products
+			^
+		K-Element Multi-Grade-Element
+
+		you'd have to issue instructions to take the K-Element over the first element and add instruction to the second
+		^ LEFT RIGHT-FIRST // wherever you stored this
+		^ LEFT RIGHT-SECOND // wherever you stored this
+		+ a b
+		// which if they are K-Elements then you get the summed result back
+		// the thing that sucks if you need to track coefficients for all these bad boys, hmm
+		// don't want to store a bunch of zeroes all over the place
+		
+		??? How do you perform the actual exterior/wedge product? 
+		since before we just did an OR and that was simple but in this case if you have
+		e1 and e2 and wedge them together then you don't get the correct result
+		need to clear the bits
+		and then it is not obvious that e1e2 ^ e1 is zero anymore
+
+		can we use a combination of both ideas?
+		it ultimately is a list of elements, not sure how else you could faithfully represent it
+
+		so right now we punt on it but we would need a list of elements and their coefficients
+		and their grades
+
+		you probably end up with the same amount of space used and it literally is what it is
+		you need to faithfully represent all these objects
+
+		so instead of distribute the grassmann products you would have to build a thing
+
+		e1 ^ (e1 + e2) this turns into a Multi-Element
+			^
+		  e1 +
+		    e1 e2
+
+		    ^
+		  e1 Multi-Element which has a list of K-Element
+
+		  then the result is itself a multi-element whose grade is degree 2
+		  you need procedures that tell you whether it is a bivector or trivector
+		  it is either K-Element 
+
+		  a Multi-Element is either a K-Element or a linear combination of K-Elements of differing grades
+
+		  Multi-Element: e1 e2
+		  Multi-Element: e1^e1 + e1^e2 then this list collapses down to 0 + e1^e2
+
+		 so you handle the distribution there instead of as a pass over the data
+
+		 Multi-Element :: struct {
+		 	#as using _kind: Ast_Node;
+			elements: [] K_Element; // since these are all the same size we could just pool them
+									// put them next to each other in memory
+		 }
+
+		 they actually won't exist in the parser, cause we will issue commands to turn them into these things
+		 so they would exist in the interpreter when calculating final values
+
+		 but we could introduce them into the 'grassmann-parser.exe' and see how that goes
+		 since we don't have a working VM yet
+
+
+		FROM DA BOOK:
+		 Define the opcode and how it is encoded
+		 Augment the compiler to emit the instruction
+		 Update the VM to decode and execute the instruction
+		 Rinse and Repeat
+
+		 Stack-based VM since so it needs to have instructions to push and add and stuff like that
+
+
+*/
+
 main :: () {
+
+{
+	// e1 + e2 + e1
+	values: [4] int;
+	order:  [4] u8;
+	num_elements: int = 0;
+
+	values[1] = 1;
+	values[2] = 1;
+
+	order[0] = 1; // index
+	order[1] = 2;
+
+	num_elements = 2;
+
+	for i: 0..num_elements-1 {
+		if order[i] == 1 { print( "Break" ); break; }
+		else {
+		}
+	}
+}
+
+{
+	// so we can work with scratch k-element nodes when doing the operations
+	// i'd like to turn eval into a tree-walking, with the new restructured format and multi-elements
+	// THEN revisit doing it as a VM that compiles instructions
+	//
+	// so we have a working implementation that we can fall back on
+	// there is some partial evaluation that has to happen before the instructions are issued though
+	// otherwise we have to
+	// eval would have to issue a span command
+	// which could generate a lot of instructions (i'd have to think about it)
+	// we would have k-span, k-cospan and the like that would have to happen on the instruction side of things
+	//
+	// it seems to me like it could get complicated
+	// then sum them up or something, hmm
+	
+
+	scratch: [5] int;
+	num_values:  int;
+	
+	scratch[0] = 10;
+	scratch[1] = 20;
+	scratch[2] = 30;
+	scratch[3] = 40;
+	scratch[4] = 50;
+	num_values = 3;
+
+	values: [] int;
+	values.data = alloc( num_values * size_of(type_of(scratch[0])) );
+	values.count = num_values;
+
+	memcpy( values.data, scratch.data, num_values * size_of(type_of(scratch[0])));
+
+	print( "Values == %\n", values );
+	free( values.data );
+}
+
+/*
+{
+	Instruction_Encoder :: struct {
+		temp_buffer: int; // push the instruction and the operands, 	
+	}
+
+	// could just push the op code into the buffer
+//	encode_instruction :: ( op: OpCode ) {
+//
+//	}
+
+	encode_one_operand_instruction   :: (op: OpCode, operand0: u8 ) { }
+	encode_two_operand_instruction   :: (op: OpCode, operand0: u8, operand1: u8 ) { }
+	encode_three_operand_instruction :: (op: OpCode, operand0: u8, operand1: u8, operand2: u8 ) { }
+
+	Instructions :: #type [..] u8;
+
+	instructions: Instructions;
+	array_add( *instructions, 10 );
+
+	for instruction: instructions {
+		print( "Instruction == %\n", instruction );
+	}
+
+	OpCode :: enum u8 {
+		
+		// index into the definitions table
+
+		OpError    :: 0;
+		OpConstant :: 1; // 'constant' expression
+		OpAdd 	   :: 2;  
+		OpSub 	   :: 3;
+	}
+
+	OpCode_Definition :: struct {
+		name: string;
+		operand_width_in_bytes: int; 
+	}
+
+	definitions: [] OpCode_Definition = .[
+		.{"OpError", 	-1 },
+		.{"OpConstant",  1 },
+		.{"OpAdd",    	 2 },
+		.{"OpSub",    	 1 }
+	];
+
+	get_opcode_definition :: ( op: OpCode, definitions: [] OpCode_Definition ) -> ( found: bool, definition: OpCode_Definition ) {
+		if cast(u8)op <= definitions.count {
+			return true, definitions[op];
+		}
+		else {
+			return false, definitions[0];
+		}
+	}
+
+	definition := definitions[OpCode.OpAdd];
+	print( "Definition name and width == % %\n", definition.name, definition.operand_width );
+
+	definition = definitions[OpCode.OpSub];
+	print( "Definition name and width == % %\n", definition.name, definition.operand_width );
+
+	// cool what was he doing with this where he needed a slice and a map???
+}
+*/
 
 {
 	values: [..] int;
@@ -510,3 +754,4 @@ main :: () {
 #import "File";
 #import "Windows";
 #import "String";
+

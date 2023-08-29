@@ -50,8 +50,3 @@ read_line :: () -> ( user_input: string ) {
 
 	return user_input;
 }
-
-
-#scope_file
-
-#import "Windows"; // ReadFile()

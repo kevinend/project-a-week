@@ -4,6 +4,8 @@ Interpreter :: struct {
 	ast: *Ast_Node;
 }
 
+
+
 eval :: ( interp: *Interpreter ) -> ( result: string ) {
 
 	interp.ast = distribute_grassmann_products( interp.ast );

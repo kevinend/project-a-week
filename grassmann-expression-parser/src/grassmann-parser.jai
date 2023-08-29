@@ -1859,11 +1859,9 @@ main :: () {
 // test N=3, "(e1+e3)^(e1+e2)" 
 
 
-/*
-
 	// THESE SHOULD BE TESTS AS WELL!
-	init_dimension( N = 4 );
-	init_basis_one_elements( string.["e1","e2","e3","e4"] );
+	set_dimension( N = 4 );
+	set_basis_one_elements( string.["e1","e2","e3","e4"] );
 
 	expression: string = "e1";
 	result: string = eval( expression );
@@ -1932,7 +1930,6 @@ main :: () {
 	print( "%\n", result );
 
 	debug_print( expression );
-*/
 
 	return;
 }
