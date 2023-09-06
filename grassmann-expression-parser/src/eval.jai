@@ -1,369 +1,177 @@
 #scope_export
 
-K_Element :: struct {
-	grade: int;
-	coefficient: int;
-	one_element_components: s64;
+
+
+// [e1,e2,e3,e12,e13,e23...]
+// can map into this on the basis, space so you evaluate the grassmann products then 
+// but what if you have something like
+//  e1 ^ (e2 ^ e3)
+//   ^
+// e1 ^
+//    e2 e3
+// you don't want to eval and put in e2e3 then e1, or e2e3 and then e1e2e3
+// so exterior and regressive products return + and then those sums use the values
+// it's just the way she has to go unfortunately
+// man it would be cool to just work off the table...
+// 
+// maybe we thread the product through the recursive calls?
+
+
+
+// i had this thought that maybe we can use the table for everything...
+// like we iterate through there, instead of creating new memory we just go through
+// at the end you are left with sums
+// so you maintain the order and when you resolve an exterior product you just add it to the sum
+
+Result :: struct {
+	coefficient: int = 0;
+	updated: bool;
 }
 
-Multi_Element :: struct {
-	elements: [] K_Element;
-}
+result:  	  [64] Result;
+result_order: [64] u8;
 
-EVAL_TEMP_BUFFER_LENGTH :: 8; // this needs to depend on the dimension of the space
-temp_buffer: [EVAL_TEMP_BUFFER_LENGTH] K_Element;
-temp_cursor: int;
+evaluate :: ( node: *Ast_Node, env: *Environment ) {
 
-add_multi_element :: ( grade: int, coefficient: int, one_element_components: s64 ) {
+	// memset to zero
+	for i: 0..result.count-1 {
+		result[i].coefficient = 0;
+		result[i].updated     = false;
 
-	assert( temp_cursor < EVAL_TEMP_BUFFER_LENGTH );
+		result_order[i]  = 0;
+	}
 
-	temp_buffer[temp_cursor].grade 		 = grade;
-	temp_buffer[temp_cursor].coefficient = coefficient;
-	temp_buffer[temp_cursor].one_element_components = one_element_components;
+	
+	// This application accepts the following forms of expressions.
+	// (1) Ident = Expression;
+	// (2) Ident;
+	// (3) Expression;
+	//
+	// In case (1) we eval the expression and store the value (simplified ast) in a symbol table
+	// In case (2) we traverse the ast for the identifier and print out the resulting expression
+	// In case (3) we traverse the ast, simplify it as much as possible and print the result
 
-	temp_cursor += 1;
-
-	return;	
-}
-
-new_multi_element :: () -> ( result: *Multi_Element ) {
-
-	// takes the elements out of the temp buffer, copy them to the heap, point our multi-element at that buffer
-	// the multielement takes ownership of the memory and is responsible for freeing
-
-	m := New(Multi_Element);
-	m.elements.data  = alloc( temp_cursor * size_of(K_Element) );
-	m.elements.count = temp_cursor;
-
-	assert( m.elements.data != null );
-
-	memcpy( m.elements.data, *temp_buffer[0], temp_cursor * size_of(K_Element) );
-
-	temp_cursor = 0; // reset for the next set of multielements to be created
-
-	return m;
-}
-
-eval :: ( node: *Ast_Node ) -> ( result: *Multi_Element ) {
-
-	result: *Multi_Element;
-	if node.kind == .K_Element {
-		k_element_node := cast(*K_Element_Node)node;
-		add_multi_element( k_element_node.grade, k_element_node.coefficient, k_element_node.one_element_components );
-		result = new_multi_element();
+	result: *Ast_Node = null;
+	if node.kind == .Identifier { // or we could notate it and just move on, like if there is a token and a semicolon then don't substitute
+		print( "We need to print the identifier\n" );
+		result = null;
 	}
 	else
-	if node.kind == .Literal {
-		literal_node := cast(*Literal_Node)node;
-		add_multi_element( 0, literal_node.value, 0 );
-		result = new_multi_element();
+	if node.kind == .Binary_Op {
+		binary_operator := cast(*Binary_Operator_Node)node;
+		if binary_operator.op == .Assign {
+			// this is eval and assign
+			result = eval( binary_operator.right, env );
+			print_ast( result );
+
+			// once we have a symbol table we can add stuff in there
+			// just copy that over out of the temp memory into the symbol table
+		}
+		else {
+			// this is just eval the inline expression
+			// the parser is not set up for this yet!
+		}
+	}
+}
+
+eval :: ( node: *Ast_Node, env: *Environment ) -> ( result: *Ast_Node ) {
+
+	result: *Ast_Node;
+	if node.kind == .K_Element || node.kind == .Literal {
+		result = clone_node( node );
 	}
 	else
-	if node.kind == .Unary_Operator {
-		unary_operator_node := cast(*Unary_Operator_Node)node;
-		operand := eval( unary_operator_node.operand );
-		result = eval_unary_operator( unary_operator_node.operation, operand );
+	if node.kind == .Unary_Op {
+		unary_operator := cast(*Unary_Operator_Node)node;
+		operand := eval( unary_operator.operand, env );
+		result   = eval_unary_operator( unary_operator.op, operand, env );
 	}
 	else 
-	if node.kind == .Binary_Operator {
+	if node.kind == .Binary_Op {
 		// might want to check for errors or something after left and right???
-		binary_operator_node := cast(*Binary_Operator_Node)node;
-		left  := eval( binary_operator_node.left\_operand );
-		right := eval( binary_operator_node.right_operand );
+		binary_operator := cast(*Binary_Operator_Node)node;
+		left  := eval( binary_operator.left,  env );
+		right := eval( binary_operator.right, env );
 
-		result = eval_binary_operator( binary_operator_node.operation, left, right );
+		if binary_operator.op == .Exterior_Product || binary_operator.op == .Regressive_Product {
+			result = eval_binary_operator( binary_operator.op, left, right );
+		}
+		else 
+		if binary_operator.op == .Sum {
+			if left.kind == .K_Element {
+				
+			}
+		}
+
+
+		
+/*
+		if left.kind == .K_Element && right.kind == .K_Element {
+			result = eval_binary_operator( binary_operator.op, cast(*K_Element_Node)left, cast(*K_Element_Node)right, env );
+		}
+		else {
+			result = clone_node( node );
+		}
+*/
 	}
 
 	return result;
 }
-
 
 #scope_file
 
-eval_unary_operator :: ( operation: Unary_Operation, operand: *Multi_Element ) -> ( result: *Multi_Element ) {
-
-	// For a given multi-element the unary operators generate the same number results
-	// that already belong to the multi-element so we update in place.
-	// 
-	// Example:
-	//  Negate e1 => -e1
-	//  Left  Complement e1,e2 => -e2,e1
-	//  Right Complement e1,e2 =>  e2,e1
-
-	result := operand;
-	if operation == {
-		case .Negation; { 
-			for i: 0..operand.elements.count-1 {
-				operand.elements[i].coefficient *= -1;	
-			}
-		}
-		case .Left_Complement;  { 
-			for i: 0..operand.elements.count-1 {
-				operand.elements[i] = eval_complement( .Left, *operand.elements[i] );	
-			}
-		}
-		case .Right_Complement; { 
-			for i: 0..operand.elements.count-1 {
-				operand.elements[i] = eval_complement( .Right, *operand.elements[i] );
-			}
-		}
-	}
-
-	return result;
-}
-
-eval_sum :: ( lvalue: *Multi_Element, rvalue: *Multi_Element ) -> ( result: *Multi_Element ) {
-	
-	assert( (lvalue.elements.count + rvalue.elements.count) < EVAL_TEMP_BUFFER_LENGTH );
-
-	memcpy( temp_buffer.data, rvalue.elements.data, rvalue.elements.count * size_of (K_Element) );
-
-	// initial implementation; slow!
-	for i: 0..lvalue.elements.count-1 {
-		for j: 0..rvalue.elements.count-1 {
-			if lvalue.elements[i].one_element_components == rvalue.elements[j].one_element_components {
-				temp_buffer[j].coefficient += lvalue.elements[i].coefficient;
-			}
-		}
-	}
-
-	result := new_multi_element();
-	return result;	
-}
-
-eval_difference :: ( lvalue: *Multi_Element, rvalue: *Multi_Element ) -> ( result: *Multi_Element ) {
-
-	result: *Multi_Element;
-	for i: 0..rvalue.elements.count-1 {
-		rvalue.elements[i].coefficient *= -1;
-	}
-
-	result = eval_sum( lvalue, rvalue );
-	return result;
-}
-
-exterior_product :: ( lvalue: *K_Element, rvalue: *K_Element ) -> ( result: K_Element ) {
-
-	assert( temp_cursor < EVAL_TEMP_BUFFER_LENGTH );
-
-	result: K_Element;
-	result.grade = 0;
-	result.coefficient = 0;
-	result.one_element_components = 0;
-
-	if lvalue.grade == 0 || rvalue.grade == 0 {
-		result.grade 	   			  = lvalue.grade + rvalue.grade;
-		result.coefficient 			  = lvalue.coefficient * rvalue.coefficient;
-		result.one_element_components = lvalue.one_element_components | rvalue.one_element_components;
-	}
-	else
-	if (lvalue.one_element_components & rvalue.one_element_components) == 0 { // no one elements in common; implies sum of grades is less than or equal to N	
-		result.grade				  = lvalue.grade + rvalue.grade;
-		result.coefficient			  = lvalue.coefficient * rvalue.coefficient;
-		result.one_element_components = lvalue.one_element_components | rvalue.one_element_components;
-	}
-
-	return result;
-}
-
-eval_exterior_product :: ( lvalue: *Multi_Element, rvalue: *Multi_Element ) -> ( result: *Multi_Element ) {
-
-	// need to handle distribution
-	// (e1,e2,e3)^(e1,e2,e3) is 9 results, though some may be zero!
-
-	assert( (lvalue.elements.count * rvalue.elements.count) < EVAL_TEMP_BUFFER_LENGTH );
-
-	k_element: K_Element;
-	for i: 0..lvalue.elements.count-1 {
-		for j: 0..rvalue.elements.count-1 {
-			k_element = exterior_product( *lvalue.elements[i], *rvalue.elements[i] );
-			add_multi_element( k_element.grade, k_element.coefficient, k_element.one_element_components );
-		}
-	}
-
-	result := new_multi_element();
-	return result;
-}
-
-// when you do interior product you have to do the k-span of equal grade
-// so we will need that product somewhere in here
-// e123
-// e12 e2e3
-// e1e2^e2 reg e3 + e1e2^e3 reg e2
-//
-// for each element in the left
-//  for each element in the right  (could probably cache this..., nope don't know the arguments)
-//    generate the k-span based on the right and left arguments (list K-Elements)
-//    generate the list of k-cospan elements (list K-Elements)
-//    regressive_product( k-span, k-cospan )
-//    add to the temporary buffer
-//    copy out into the products buffer
-//    then need to sum that buffer
-//  e1,e2 reg e1,e2
-//    then you need to sum in the results buffer, add one, then 
-//
-// if you can do one, you can do many
-// so how do you do one?
-//
-//  one element and one element
-//  if grade of left + grade of right is less than N, no spanning required, return 0
-//  else 
-//   span right element which generates a list of k-elements (this is determined from)
-//   cospan right elements which generates a list of k-cospan elements
-//   iterate through that list pairwise and do the actual regressive product
-//   take each of those products and sum them up
-//   
-//  so that is two multielements composed of single elements
-//  what if a multielement has two elements
-//   (e1)  (e1,e2)
-//  temp_k_span:
-//  temp_k_cospan:
-//  temp_products: [], 
-//  temp_sums:     [] add the first element from the product
-//  then you generate a new set of products
-//  add that to the running list of total sums
-//
-//  or you use that trick to find the common factor
-//  it would generate way fewer products and much smaller footprint
-// e1 _e1e2 = e2
-
-//  e1e2 e2e3
-//  that is to generate a set of factors though
-
-// so i had this thought last night as well
-// we the interior or dot product is regressive product of the complement so we can do the same
-// thing without the full expansion
-
-eval_regressive_product :: ( lvalue: *Multi_Element, rvalue: *Multi_Element ) -> ( result: *Multi_Element ) {
-
-	// implements the Grassmann equivalent of Demorgan's Law
-	//    NOT(e1 regressive e2) = NOT(e1) ^ NOT(e2)
-	// ...    e1 regressive e2  = NOT(NOT(e1) ^ NOT(e2))
-	// to see expansion using k-span and k-cospan, look at the expand function
-
-	assert( (lvalue.elements.count * rvalue.elements.count) < EVAL_TEMP_BUFFER_LENGTH );
-
-	for i: 0..lvalue.elements.count-1 {
-		lvalue.elements[i] = eval_complement( .RIGHT, *lvalue.elements[i] );
-	}
-
-	for i: 0..rvalue.elements.count-1 {
-		rvalue.elements[i] = eval_complement( .RIGHT, *rvalue.elements[i] );
-	}
-
-	// distribute, and then need to sum them up (that part I don't have figured out yet)
-	// since i have the tree expansion, I might just want to do it. It might make more sense to do so
-	k_element: K_Element;
-	for i: 0..lvalue.elements.count-1 {
-		for j: 0..rvalue.elements.count-1 {
-			k_element = exterior_product( *lvalue.elements[i], *rvalue.elements[j] );
-			k_element = eval_complement( .RIGHT, k_element );
-
-			for k: 0..temp_cursor-1 {
-				if temp_buffer[k].one_element_components == k_element
-			}
-		}
-	}
-
-	// still convert the products, however we at least get a tree that handles all this stuff for us
-	// expand, then simplify
-	// i still like the concept of multi-elements
-	// then we just have the sums and you take the elements and if they don't sum oh well
-	//      +
-	//   e1  +
-	//      e2 e3
-	// convert each multielement then you say if you iterate through here
-	// if you do the then you have e1 + e2 + e3 which is the order you have
-	// it would be cool if we didn't have to do the iterative loop though
-	//
-	// parse --> expand --> simplify/eval
-	// partial eval for the exterior product in the tree
-	// but that is just what we need to do 
-	
-
-	// iterate through the temp buffer of products and try to sum them up
-
-	//  (e1,e2) | (e1,e2)
-	//  (>>e1,>>e2) | (>>e1,>>e2)
-	// add the product to a list of sums
-	// if you put the products into the temp_buffer, then you run a sum across those
-
-
-	// this procedure is the big kahuna, if i can get this to work then we are golden
-	// or we use the Demorgan's law to flip all of these and just wedge products?
-	// fewer terms that way
-
-	// (e1,e2)| (e3,e4)
-	// what needs to be done:
-	//	(1) distribute the product
-	//  (2) generate the k-span
-	//  (3) generate the co-span
-	//  (4) evaluate the regressive_product
-	//  (5) return
-	//
-	// Alternative (that saves a lot of space)
-	// Use equivalent of demorgan's law to save a shit ton of space
-	// Not(e1^e1) 	  = Not(e1) reg Not(e2)
-	// Not(e1 reg e2) = Not(e1) ^ Not(e2)
-	// e1 reg e2      = Not(Not(e1) ^ Not(e2))
-
-	
-
-}
-
-eval_binary_operator :: ( operation: Binary_Operation, lvalue: *Multi_Element, rvalue: *Multi_Element ) -> ( result: *Multi_Element ) {
-	
-	// there should only be a single basis element in each multielement
-
-	result: *Multi_Element;
-	if operation == {
-		case .Sum; { 
-			result = eval_sum( lvalue, rvalue ); 
-		}
-		case .Difference; {
-			result = eval_difference( lvalue, rvalue );
-		}
-		case .Exterior_Product; {
-			result = eval_exterior_product( lvalue, rvalue );
-		}
-		case .Regressive_Product; {
-			result = eval_regressive_product( lvale, rvalue );
-		}
-	}
-
-	return null;
-}
-
-Complement_Variant :: enum {
+Complement_Type :: enum u8 {
 	Left;
 	Right;
 }
 
-eval_complement :: ( variant: Complement_Variant, k_element: *K_Element ) -> ( n_k_element: K_Element ) {
+eval_unary_operator :: ( op: Unary_Op, operand: *Ast_Node, env: *Environment ) -> ( result: *Ast_Node ) {
 
-	n_k_element: K_Element;
-	n_k_element.grade 		= space.dimension - k_element.grade;
-	n_k_element.coefficient = k_element.coefficient;
-	n_k_element.one_element_components = space.n_element ^ k_element.one_element_components;
+	result: *Ast_Node;
+
+	assert( operand.kind == .K_Element );
+	k_element := cast(*K_Element_Node)operand;
+
+	if op == {
+		case .Negation; {
+			k_element.coefficient *= -1;
+			result = new_k_element_node( k_element.coefficient, k_element.basis );
+		}
+		case .Left_Complement; {
+			result = eval_complement( .Left, k_element, env.n_element, env.dimension );
+		}
+		case .Right_Complement; {
+			result = eval_complement( .Right, k_element, env.n_element, env.dimension );
+		}
+	}
+
+	return result;
+}
+
+eval_complement :: ( type: Complement_Type, k_element: *K_Element_Node, n_element: s64, dimension: int ) -> ( n_k_element: *K_Element_Node ) {
+
+	n_k_element := new_k_element_node( 
+		 coefficient = k_element.coefficient
+		,basis 	     = n_element ^ k_element.basis 
+	);
 
 	// Need to determine whether the (n-k)-element should be negated.
 	// The procedure below effectively takes the exterior product between the args and determines the number
 	// of swaps required to build the final N element from the product of the (n-k)-element or the k-element
 	// or vice versa depending on whether this is a left or right complement.
 
-	if variant == .Left {
-		n_k_element.coefficient *= anticommutative_coefficient( *n_k_element, k_element );
+	if type == .Left {
+		n_k_element.coefficient *= anticommutative_coefficient( n_k_element, k_element, dimension );
 	}
 	else
-	if variant == .Right {
-		n_k_element.coefficient *= anticommutative_coefficient( k_element, *n_k_element );
+	if type == .Right {
+		n_k_element.coefficient *= anticommutative_coefficient( k_element, n_k_element, dimension );
 	}
 
 	return n_k_element;
 }
 
-anticommutative_coefficient :: ( lvalue: *K_Element, rvalue: *K_Element ) -> ( coefficient: int ) {
+anticommutative_coefficient :: ( lvalue: *K_Element_Node, rvalue: *K_Element_Node, dimension: int ) -> ( coefficient: int ) {
 
 	// This procedure calculates the number of swaps required to reorder the elements into the 'canonical' ordering to build the N-element.
 	// If the number of swaps is odd then the product needs negated.
@@ -381,11 +189,11 @@ anticommutative_coefficient :: ( lvalue: *K_Element, rvalue: *K_Element ) -> ( c
 	//
 	// If after completing this process we have swapped an odd number of times then we negate the final product.
 
-	temp: int = rvalue.one_element_components;
+	temp: int = rvalue.basis;
 	num_swaps: int = 0;
-	for < i: space.dimension-1..0 {
-		if lvalue.one_element_components & (1 << i) {
-			for j: 0..space.dimension-1 {
+	for < i: dimension-1..0 {
+		if lvalue.basis & (1 << i) {
+			for j: 0..dimension-1 {
 				if i == j { 
 					temp |= (1 << j);
 					break;
@@ -400,4 +208,76 @@ anticommutative_coefficient :: ( lvalue: *K_Element, rvalue: *K_Element ) -> ( c
 
 	if num_swaps % 2 == 0 { return 1; }
 	else { return -1; }
+}
+
+eval_binary_operator :: ( op: Binary_Op, lvalue: *K_Element_Node, rvalue: *K_Element_Node, env: *Environment ) -> ( result: *Ast_Node ) {
+	
+	result: *Ast_Node;
+
+	if op == {
+		case .Sum; {
+			// sums are handled in a second eval pass
+			result = new_binary_operator_node( op, lvalue, rvalue );
+		}
+		case .Exterior_Product; {
+			result = eval_exterior_product( lvalue, rvalue );
+		}
+		case .Regressive_Product; {
+			result = eval_regressive_product( lvalue, rvalue, env.dimension );
+		}
+	}
+
+	return result;
+}
+
+
+
+eval_exterior_product :: ( lvalue: *K_Element_Node, rvalue: *K_Element_Node ) -> ( result: *K_Element_Node ) {
+
+	result := new_k_element_node( coefficient = 0, basis = 0 );
+
+	if lvalue.basis == 0 || rvalue.basis == 0 { // basis = 0 means grade-0 (scalar) element
+		result.coefficient  = lvalue.coefficient * rvalue.coefficient;
+		result.basis 		= lvalue.basis | rvalue.basis;
+	}
+	else
+	if (lvalue.basis & rvalue.basis) == 0 { // no one elements in common; implies sum of grades is less than or equal to N	
+		result.coefficient  = lvalue.coefficient * rvalue.coefficient;
+		result.basis 		= lvalue.basis | rvalue.basis;
+	}
+
+	return result;
+}
+
+eval_regressive_product :: ( lvalue: *K_Element_Node, rvalue: *K_Element_Node, n_element: s64 ) -> ( result: *K_Element_Node ) {
+
+	result := new_k_element_node( coefficient = 0, basis = 0 );
+	
+	if (lvalue.basis | rvalue.basis) == n_element {
+		result.coefficient = lvalue.coefficient * rvalue.coefficient;
+		result.basis       = lvalue.basis & rvalue.basis;
+
+		// not sure about anticommutativity here!!!
+	}
+
+	return result;
+}
+
+// result table, iterate through there and create the final sums...
+// that might be a way to do it, all calculations end up in there
+// so once you hit a value it doesn't matter
+// let's try that so there isn't a separate, sum thingy
+eval_sums :: ( node: *Ast_Node ) -> ( result: *Ast_Node ) {
+
+	if node.kind == .K_Element {
+	}
+	
+	if node.kind == .Binary_Op {
+		// since we resolved all grassmann products and unary operators then this must be a sum!
+		binary_operator := cast(*Binary_Operator_Node)node;
+		assert( binary_operator.op == .Sum );
+		
+		left  := eval_sum( binary_operator.left  );
+		right := eval_sum( binary_operator.right );
+	}
 }

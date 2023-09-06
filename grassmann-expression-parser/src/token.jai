@@ -50,8 +50,8 @@ Token :: struct {
 	character_index: Range(Character_Index);
 
 	union {
-		identifier:  		 string;
-		number:      		 int;
-		basis_element_index: int;
+		identifier: string;
+		number:     int;
+		basis: 		s64; // for basis-elements
 	}	
 }

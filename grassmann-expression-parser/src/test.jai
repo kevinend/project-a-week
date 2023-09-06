@@ -355,397 +355,190 @@ recurse :: ( x: int )  {
 
 */
 
+// N = 4
+// 1-4=  4
+// 2-6= 12
+// 3-4= 12
+// 4-1=  4
+//   32 iterations
+// 4 * 15 = 60
+// gray codes 
+// 0, have to iterate over each of these
+// 1, 
+// 2, iterate through 2
+// 3 iterate through 4
+// 8 iterate through all 8
+// 14 iterations, though you need to go through the call and manage the memory
+// for this, but you do get the grades for free
+
+// so if we allocate a buffer of 16 bits
+// then we allocate the numbers 0 and 1
+// then we iterate through that list
+// and add a bit to the left and a bit to the right
+// 00 01 10 11 // grade 2
+// 000 001 010 001 011 101 110 can't keep track of grades this way like i thought
+// forget that just do the pop count
+// you can update the data as  you go
+// 00 01 10 11 -> as you generate you lookup in the table and say these are the one elements
+
+// This does a lot of work to build the basis elements but it does it once
+// N = 4; total iterations = 32 to get grade
+// N = 5; total iterations = 81 to get grade
+// N = 6; total iterations = 193 to get grade
+
+pop_count :: ( x: int ) -> ( count: int ) {
+
+	count: int = 0;
+	while x != 0 {
+		count += 1;
+		x &= x-1;
+	}
+
+	return count;
+}
+
+generate_basis_symbol :: ( element: int, grade: int, n: int, one_element_symbols: [] string ) -> ( symbol: string ) {
+
+	builder: String_Builder;
+	num_processed_basis_one_elements: int = 0;
+
+	if grade == 0 {
+		// this might not be the correct play when printing one-elements
+		append( *builder, "1" );
+	}
+	else {
+		// Iterate through each bit and lookup the corresponding basis symbol supplied by the user
+		// This is slow when building the entire set of basis elements for the user however this code path
+		// is traversed maybe once or twice during a run of the application so willing to put up with this for now.
+		// Also if the dimension (N) starts creeping up then this gets even slower but it will for sure work, which
+		// was not guaranteed with the other approaches I took.
+		
+		for i: 0..n-1 {
+			if element & (1 << i) {
+				append( *builder, one_element_symbols[i] );
+				if num_processed_basis_one_elements < grade-1 { // in an expression like e1^e2 the number of exterior products is the grade-1
+					append( *builder, "^" );
+				}
+				num_processed_basis_one_elements += 1;
+			}
+		}
+	}
+
+	// TODO: Leaking memory!!!
+	symbol: string = builder_to_string( *builder );
+	return symbol;
+}
+
 main :: () {
 
 {
-	// e1 + e2 + e1
-	values: [4] int;
-	order:  [4] u8;
-	num_elements: int = 0;
+	// so now you can store the elements as a coefficient
+	// this implements the flyweight pattern!
+	//
+	// so a k-element is a coefficient, element: int; which is just a lookup into the table
+	// basis_element:
+	// then you can take the basis_element exterior basis_element
+	// k_element.basis ^ n_element.basis
+	// something like that maybe?
+	// then when you print you can do something like basis_elements[e1].symbol + basis_elements[e2].symbol
+	// or something like that which is pretty cool
 
-	values[1] = 1;
-	values[2] = 1;
-
-	order[0] = 1; // index
-	order[1] = 2;
-
-	num_elements = 2;
-
-	for i: 0..num_elements-1 {
-		if order[i] == 1 { print( "Break" ); break; }
-		else {
+	power :: ( n: int, k: int ) -> ( value: int ) {
+		value: int = 1;
+		for i: 0..k-1 {
+			value *= n;
 		}
+
+		return value;
+	}
+	bits: int;
+	grade:  int;
+	symbol: string;
+	dimension: int = 3;
+	one_element_symbols := string.["e1","e2","e3"];
+
+	num_basis_elements: int = power( 2, dimension );
+
+	for i: 0..num_basis_elements-1 {
+		grade := pop_count(i);
+		symbol = generate_basis_symbol( i, grade, dimension, one_element_symbols );
+		print( "(i,grade,symbol) == (%,%,%)\n", i, grade, symbol );
 	}
 }
 
+// should be able to apply the same idea with the k-span to generate all the elements
+// something like this should work, so you allocate space to store all of these up front based on the dimension
 {
-	// so we can work with scratch k-element nodes when doing the operations
-	// i'd like to turn eval into a tree-walking, with the new restructured format and multi-elements
-	// THEN revisit doing it as a VM that compiles instructions
-	//
-	// so we have a working implementation that we can fall back on
-	// there is some partial evaluation that has to happen before the instructions are issued though
-	// otherwise we have to
-	// eval would have to issue a span command
-	// which could generate a lot of instructions (i'd have to think about it)
-	// we would have k-span, k-cospan and the like that would have to happen on the instruction side of things
-	//
-	// it seems to me like it could get complicated
-	// then sum them up or something, hmm
+	choose :: ( n: int, k: int ) -> ( value: int ) {
+		// example: choose(4,2) == (4*3)/(2*1) == 6
+		if k == 0 return 1;
+		return (n * choose(n-1, k-1)) / k;
+	}
+
+	power :: ( n: int, k: int ) -> ( value: int ) {
+		value: int = 1;
+		for i: 0..k-1 {
+			value *= n;
+		}
+
+		return value;
+	}
+
+	n: int = 3;
+	// user supplies the list of basis symbols
+	basis_symbols := string.["e1","e2","e3"];
+	print( "Basis symbols count == %\n", basis_symbols.count );
+
+	num_basis_elements: int = power( 2, n );
+	print( "Num basis elements == %\n", num_basis_elements );
+
+	Basis_Element :: struct {
+		grade: int;
+		symbol: string;
+	}
+
+	basis_elements: [] Basis_Element;
+	basis_elements.data  = alloc( num_basis_elements * size_of(Basis_Element) );
+	basis_elements.count = num_basis_elements;
+
+	assert( basis_elements.data != null );
+
+	basis_elements[0].grade = 1;
+	basis_elements[0].symbol = "e1"; // didn't crash so that is good
+
 	
-
-	scratch: [5] int;
-	num_values:  int;
+	// then we populate this bitch with the values we create below
+	// all we do is allocate a max of 2^6 which is 64 of these bad boys and use what we need so we don't have
+	// to keep reallocating all the time
 	
-	scratch[0] = 10;
-	scratch[1] = 20;
-	scratch[2] = 30;
-	scratch[3] = 40;
-	scratch[4] = 50;
-	num_values = 3;
-
-	values: [] int;
-	values.data = alloc( num_values * size_of(type_of(scratch[0])) );
-	values.count = num_values;
-
-	memcpy( values.data, scratch.data, num_values * size_of(type_of(scratch[0])));
-
-	print( "Values == %\n", values );
-	free( values.data );
+	// so our approach for the 'span' doesn't actually work
+	// but we can do something a little bit more clever
+	//
+	// Grade N
+	// Grade N-1
+	// Grade 1
+	// from the grade 1 we can easily build the Grade-1 elements
+	// then the N-1 elements we iterate through the one elements and remove each 1-element one at a time
 }
 
 /*
-{
-	Instruction_Encoder :: struct {
-		temp_buffer: int; // push the instruction and the operands, 	
-	}
+	and you're like hey dude where is (3,11)?
+	(3,7)
+	(3,13)
+	(3,14)
 
-	// could just push the op code into the buffer
-//	encode_instruction :: ( op: OpCode ) {
-//
-//	}
+	but i think we can generate that rather easily
 
-	encode_one_operand_instruction   :: (op: OpCode, operand0: u8 ) { }
-	encode_two_operand_instruction   :: (op: OpCode, operand0: u8, operand1: u8 ) { }
-	encode_three_operand_instruction :: (op: OpCode, operand0: u8, operand1: u8, operand2: u8 ) { }
+	and what do we have here?
+	these are all the three elements, kablamy
+	(7)
+	(11)
+	(13)
+	(14)
 
-	Instructions :: #type [..] u8;
-
-	instructions: Instructions;
-	array_add( *instructions, 10 );
-
-	for instruction: instructions {
-		print( "Instruction == %\n", instruction );
-	}
-
-	OpCode :: enum u8 {
-		
-		// index into the definitions table
-
-		OpError    :: 0;
-		OpConstant :: 1; // 'constant' expression
-		OpAdd 	   :: 2;  
-		OpSub 	   :: 3;
-	}
-
-	OpCode_Definition :: struct {
-		name: string;
-		operand_width_in_bytes: int; 
-	}
-
-	definitions: [] OpCode_Definition = .[
-		.{"OpError", 	-1 },
-		.{"OpConstant",  1 },
-		.{"OpAdd",    	 2 },
-		.{"OpSub",    	 1 }
-	];
-
-	get_opcode_definition :: ( op: OpCode, definitions: [] OpCode_Definition ) -> ( found: bool, definition: OpCode_Definition ) {
-		if cast(u8)op <= definitions.count {
-			return true, definitions[op];
-		}
-		else {
-			return false, definitions[0];
-		}
-	}
-
-	definition := definitions[OpCode.OpAdd];
-	print( "Definition name and width == % %\n", definition.name, definition.operand_width );
-
-	definition = definitions[OpCode.OpSub];
-	print( "Definition name and width == % %\n", definition.name, definition.operand_width );
-
-	// cool what was he doing with this where he needed a slice and a map???
-}
+	then from the three elements you want to store the two elements
 */
 
-{
-	values: [..] int;
-	for i: 0..4 {
-		array_add( *values, i+1 );
-	}
-
-	indirect: [] int = values; // does that typecheck
-	print( "Indirect == %\n", indirect );
-
-	// what happens if we add something after the assignment?
-	array_add( *values, 10 );
-
-	indirect = values;
-	print( "After update == %\n", indirect );
-
-	// we'd have to set it on every loop, which is a bit wasteful but whatever
-}
-
-{
-		values: [5] int;
-		print( "Values.count == %\n", values.count );
-}
-
-	// all i want to do is figure out how to debug an array using remedybg
-	// so it can't figure out this array type, i wonder if we just put a size on the data field?
-	// yep, that worked, thank you Casey for that
-	// what if the data type is more complex like a simple vector2D or something?
-	// okay i had to move the type to the top-level, can't handle the type in the sub-scope, whatever no biggie
-
-	recurse( 3 ); // so you can lock a value, you can use {*} to find it in any location
-	// that is cool to see what is loaded in the gamestate or something like why the eff don't i see the assets
-	// you can also change the memory format specifier, now I can actually look at token values
-	// what if we have an array of pointers?
-
-	// so i think part of it was that i was getting flustered and not thinking clearly about what i wanted to 
-	// actually do. Just slow down, nothing has to be perfect but just give it your best shot every day and you
-	// will make it. I promise!!!
-
-	// some more testing with the features that i want	
-	
-
-	{
-		values: [5] int;
-		for i: 0..4 {
-			values[i] = i+1;
-		}
-		print( "Values == %\n", values );
-	}
-
-	{
-		values: [..] int;
-		for i: 0..4 {
-			array_add(*values, (i+1) );
-		}
-		print( "Values == %\n", values );
-	}
-
-	{
-		values: [..] Vector2D;
-		for i: 0..4 {
-			v := Vector2D.{ x = (i+1), y = (i+1)*10 };
-			array_add(*values, v );
-		}
-		print( "Values == %\n", values );
-	}
-
-	{
-		values: [..] *Vector2D;
-		for i: 0..4 {
-			v := New(Vector2D);
-			v.x = (i+1);
-			v.y = (i+1) * 10;
-			array_add( *values, v );
-		}
-		print( "Values == %\n", values );
-	}
-
-	{
-		values: [..] Vector_Type;
-		v1 := Vector_Type.OneD;
-		v2 := Vector_Type.TwoD;
-		v3 := Vector_Type.ThreeD;
-
-		array_add( *values, v1 );
-		array_add( *values, v2 );
-		array_add( *values, v3 );
-
-		print( "Values == %\n", values );
-
-	}
-
-	Test :: enum { 
-		One;
-		Two;
-	}
-
-	Type1 :: struct {
-		test: Test;
-		s: string;
-	}
-
-	print( "Size of (string) == %\n", size_of(string) );
-	print( "Size of (type1)  == %\n", size_of(Type1) );
-
-	{
-		Vector3  :: struct { x,y,z: float; }
-
-		NewType1 :: struct {
-			#as using _v: Vector3;
-			value1: int;
-		}
-
-		NewType2 :: struct {
-			#as using v: Vector3;
-			value2: float;
-		}
-
-		take_vector3 :: ( v: Vector3 ) {
-			print( "(x,y,z)==(%,%,%)\n", v.x, v.y, v.z );
-			return;
-		}
-
-		nt1 := NewType1.{ x = 1,  y = 2,  z = 3,  value1 = 4 };
-		nt2 := NewType2.{ x = 10, y = 20, z = 30, value2 = 40 };
-	
-		// now that is a cool feature!
-		take_vector3( nt1 );
-		take_vector3( nt2 );
-	}
-
-	{
-		Type_Variant :: enum {
-			Type1;
-			Type2;
-			Type3;
-		}
-		
-		Base :: struct {
-			type: Type_Variant;
-		}
-
-		Type1 :: struct {
-			#as using _type: Base;
-			field1: int;
-		}
-
-		Type2 :: struct {
-			#as using _type: Base;
-			field2: float;
-		}
-
-		// cool so the subtype works on the import of the data
-		take_base :: ( node: *Base ) {
-
-			if node.type == Type_Variant.Type1 {
-				print( "Got a type1\n" );
-			}
-			else
-			if node.type == Type_Variant.Type2 {
-				print( "Got a type2\n" );	
-			}
-
-			return;
-		}
-
-		t1 := New(Type1);
-		t1.type = .Type1;
-
-		t2 := New(Type2);
-		t2.type = .Type2;
-
-		take_base( t1 );
-		take_base( t2 );
-
-		give_base :: ( variant: Type_Variant ) -> ( node: *Base ) {
-	
-			if variant == .Type1 {
-				t1 := New(Type1);
-				t1.type = .Type1;
-				return t1;
-			}
-			else
-			if variant == .Type2 {
-				t2 := New(Type2);
-				t2.type = .Type2;
-				return t2;
-			}
-		}
-
-		t11: *Type1 = cast(*Type1)give_base( .Type1 );
-		t22: *Type2 = cast(*Type2)give_base( .Type2 );
-	}
-
-	{
-		// so how does this benefit us in what we are trying to do???
-		// we can't pass an Expression_Node to some functions without a ton of casting
-		// i don't even know if this works on the return
-	}
-
-	some_float: float = 3.14;
-	some_float_string: string = tprint( "%", some_float );
-	print( "some_float_string == %\n", some_float_string ); // well that worked
-
-	output_basename := "kevin";
-	output_filename := tprint("%.lib", output_basename);
-	print( "Output filename == %\n", output_filename );
-
-	// that's awesome, just like most modern languages, another benefit over the C way
-	// they should have retro'd that into the language proper
-	if "Kevin" == "Kevin" {
-		print( "Would be cool is string comparisons just worked\n" );
-	}
-
-	one_span := New([5]int);
-	print( "%\n", type_of(one_span) );
-
-
-	values: [4] int;
-	for i: 0..values.count-1 {
-		values[i] = (1 << i);
-	}
-
-	print( "Values == %\n", values );
-
-	// we want to say something like
-	// bit = offsets[grade]
-
-	// the offset for one should be 0, then 3, then 6
-
-	// this builds the list of offsets
-
-{
-	dimension: int = 4;
-	num_basis_elements: [4] int; // these need to be dimension + 1
-	offsets: 	  		[4] int; // dimension + 1; cumulative offsets
-
-	for i: 0..dimension-1 {
-		num_basis_elements[i] = choose( n = dimension, k = i+1 );
-	}
-
-	offsets[0] = 0;
-	for i: 1..dimension-1 { // skip over grade zero and one
-		offsets[i] = offsets[i-1] + num_basis_elements[i-1];	
-	}
-
-	print( "%\n", num_basis_elements );
-	print( "%\n", offsets );
-
-	grade1: int = 1;
-	grade2: int = 2;
-	grade3: int = 3;
-	grade4: int = 4;
-
-	// can only work up to dimension 6 in this representational form
-
-	print( "%,%,%,%\n", offsets[grade1-1], offsets[grade2-1], offsets[grade3-1], offsets[grade4-1] );
-
-	// so when you have to get the grade, you have to use an offset
-	// when you get the basis_component
-	// get_basis_elements( vector.grade ) --> offsets
-	// or what you do is have separate elements 
-	//
-	// [One element] --> [Two element]
-	// then you just map directly into their bit vectors...
-}
-	
-	
 	return;
 }
 

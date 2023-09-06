@@ -1,0 +1,16 @@
+MAIN: 
+--Use Temporary allocator, free memory on every iteration of the loop
+--Allow input to come from a file instead of stdin
+--Allow free-form expressions, so just e1 ^ e1 should return the result to the console
+
+LEXER:
+--Convert number to K-Element with basis = 0
+--Error messages
+
+PARSER:
+--Handle keywords, kind of skipping over them for now
+--Revisit the use of t0,t1,t2; are they too simplistic? is the code hard to follow?
+--Error messages
+
+EVAL:
+--Interior product, use regressive with comp of second arg

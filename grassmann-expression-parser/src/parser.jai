@@ -7,8 +7,7 @@
 
 		expression 		::= <exterior-term>   [("+","-") <exterior-term]...
 		exterior-term   ::= <exterior-factor> [("^","R") <exterior-factor>]...
-		exterior-factor ::= ["-"].. ["<<"].. [">>"].. ( <basis-one-element> | <number> | <identifier> | "(" <expression> ")" )
-		
+		exterior-factor ::= ["-"].. ["<<"].. [">>"].. ( <basis-one-element> | <number> | <identifier> | "(" <expression> ")" )		
 */
 
 PARSER_TEMP_BUFFER_LENGTH :: 8;
@@ -18,7 +17,6 @@ Parser :: struct {
 	token_cursor: int;
 
 	temp_buffer: [PARSER_TEMP_BUFFER_LENGTH] Unary_Op;
-	temp_cursor: int;
 
 	ast: *Ast_Node;
 
@@ -46,66 +44,6 @@ parser_generate_ast :: ( parser: *Parser ) {
 	parser.ast = root;
 }
 
-new_k_element_node :: ( grade: int, coefficient: int, one_element_components: s64 ) -> ( node: *K_Element_Node ){
-
-	node := New(K_Element_Node);
-	assert( node != null );
-
-	node.kind  		 			= Node_Kind.K_Element;
-	node.grade 		 			= grade;
-	node.coefficient 		    = coefficient;
-	node.one_element_components = one_element_components;
-
-	return node;
-}
-
-new_identifier_node :: ( name: string ) -> ( node: *Identifier_Node ) {
-
-	node := New(Identifier_Node);
-	assert( node != null );
-
-	node.kind = .Identifier;
-	node.name = copy_string( name ); // seems wasteful, can we intern???
-
-	return node;
-}
-
-new_literal_node :: ( value: int ) -> ( node: *Literal_Node ) {
-
-	node := New(Literal_Node);
-	assert( node != null );
-	
-	node.kind = Node_Kind.Literal;
-	node.value = value;
-
-	return node;
-}
-
-new_unary_operator_node :: ( op: Unary_Op, operand: *Ast_Node ) -> ( node: *Unary_Operator_Node ) {
-
-	node := New(Unary_Operator_Node);
-	assert( node != null );
-
-	node.kind 	  = .Unary_Op;
-	node.op 	  = op;
-	node.operand  = operand;
-
-	return node;
-}
-
-new_binary_operator_node :: ( op: Binary_Op, left: *Ast_Node, right: *Ast_Node ) -> ( node: *Binary_Operator_Node ) {
-
-	node := New(Binary_Operator_Node);
-	assert( node != null );
-
-	node.kind  = .Binary_Op;
-	node.op    = op;
-	node.left  = left;
-	node.right = right;
-
-	return node;
-}
-
 print_ast :: ( ast: *Ast_Node ) {
 
 	// doesn't handle every node type yet!
@@ -123,7 +61,7 @@ print_ast :: ( ast: *Ast_Node ) {
 		if node.kind == {
 			case .K_Element; {
 				k_element := cast(*K_Element_Node)node;
-				print( "K-Element(%)\n", k_element.one_element_components ); 
+				print( "K-Element(%)\n", k_element.basis ); 
 			}
 			case .Literal; {
 				print( "Number/Literal\n" );
@@ -172,8 +110,6 @@ consume_token :: inline ( parser: *Parser ) {
 	return;
 }
 
-// keywords need to be in here!! i think!!!
-// need to rethink the use of t0,t1, and t2, might be confusing later on
 parse_statement :: ( parser: *Parser ) -> ( node: *Ast_Node ) {
 
 	t0: *Token;
@@ -319,24 +255,24 @@ parse_exterior_factor :: ( parser: *Parser ) -> ( node: *Ast_Node ) {
 	t1: *Token;
 
 	// capture unary operators and apply after parsing the factor
-	parser.temp_cursor = 0;
+	num_unary_operators: int = 0;
 	while true {
 		t0 = peek_next_token( parser );
 		if t0.type == {
 			case .Minus; {
 				consume_token( parser );
-				parser.temp_buffer[parser.temp_cursor] = Unary_Op.Negation;
-				parser.temp_cursor += 1;
+				parser.temp_buffer[num_unary_operators] = Unary_Op.Negation;
+				num_unary_operators += 1;
 			}
 			case .Left_Complement; {
 				consume_token( parser );
-				parser.temp_buffer[parser.temp_cursor] = Unary_Op.Left_Complement;
-				parser.temp_cursor += 1;
+				parser.temp_buffer[num_unary_operators] = Unary_Op.Left_Complement;
+				num_unary_operators += 1;
 			}
 			case .Right_Complement; {
 				consume_token( parser );
-				parser.temp_buffer[parser.temp_cursor] = Unary_Op.Right_Complement;
-				parser.temp_cursor += 1;
+				parser.temp_buffer[num_unary_operators] = Unary_Op.Right_Complement;
+				num_unary_operators += 1;
 			}
 			case; { break; }
 		}
@@ -345,7 +281,7 @@ parse_exterior_factor :: ( parser: *Parser ) -> ( node: *Ast_Node ) {
 	t0 = peek_next_token( parser );
 	if t0.type == .Basis_Element {
 		consume_token( parser );
-		k_element := new_k_element_node( grade = 1, coefficient = 1, one_element_components = t0.basis_element_index );
+		k_element := new_k_element_node( coefficient = 1, basis = t0.basis );
 		node = k_element;
 	}
 	else
@@ -364,14 +300,14 @@ parse_exterior_factor :: ( parser: *Parser ) -> ( node: *Ast_Node ) {
 		if t1.type == .Identifier {
 			consume_token( parser );
 			identifier := new_identifier_node( t1.identifier );
-			binary_op := new_binary_operator_node( .Exterior_Product, literal, identifier );
+			binary_op  := new_binary_operator_node( .Exterior_Product, literal, identifier );
 
 			node = binary_op;	
 		}
 		else
 		if t1.type == .Basis_Element {
 			consume_token( parser );
-			k_element := new_k_element_node( grade = 1, coefficient = 1, one_element_components = t1.basis_element_index );
+			k_element := new_k_element_node( coefficient = 1, basis = t1.basis );
 			binary_op := new_binary_operator_node( .Exterior_Product, literal, k_element );
 
 			node = binary_op;			
@@ -393,7 +329,11 @@ parse_exterior_factor :: ( parser: *Parser ) -> ( node: *Ast_Node ) {
 		// report error, unable to parse expression!
 	}
 
-	for i: 0..parser.temp_cursor-1 {
+	// iterate backwards over the set of unary operators
+	// creating a new parent that points to the later unary operator in lexicographical order
+	i: int = num_unary_operators-1;	
+	while i >= 0 {
+		defer i -= 1;
 		parent_node := new_unary_operator_node( parser.temp_buffer[i], node );
 		node = parent_node;
 	}

@@ -205,7 +205,7 @@ print_tokens :: ( lexer: *Lexer ) {
 			case .Identifier; 		  { print( "Token == %\n", token.identifier ); }
 			case .Keyword_Dimension;      { print( "KEYWORD_DIMENSION\n" ); }
 			case .Keyword_Basis_Elements; { print( "KEYWORD_BASIS_ELEMENTS\n" ); }
-			case .Basis_Element;          { print( "Basis elements %\n", token.basis_element_index ); }
+			case .Basis_Element;          { print( "Basis elements %\n", token.basis ); }
 			case .Number;     		  { print( "Token == %\n", token.number ); }
 			case .Plus; 		 	  { print( "PLUS\n"  ); }
 			case .Minus;      		  { print( "MINUS\n" ); }
@@ -277,7 +277,7 @@ compose_identifier_keyword_or_basis_symbol_token :: ( lexer: *Lexer ) -> ( token
 		for i: 0..basis_one_element_symbols.count-1 {
 			if ident == basis_one_element_symbols[i] {
 				found = true;
-				basis_element_index = i;
+				basis_element_index = i; 
 				break;
 			}
 		}
@@ -321,8 +321,8 @@ compose_identifier_keyword_or_basis_symbol_token :: ( lexer: *Lexer ) -> ( token
 	else {
 		is_basis_element, index := is_identifier_basis_element( token.identifier, lexer.basis_one_element_symbols );
 		if is_basis_element {
-			token.type = .Basis_Element;
-			token.basis_element_index = index; // see note above, wasting the string copy, we don't need the sybmol/identifier anymore
+			token.type  = .Basis_Element;
+			token.basis = (1 << index); // see note above, wasting the string copy, we don't need the sybmol/identifier anymore
 			// maybe put this as the first check then do the keyword then default to the identifier??? hmm..
 		}
 	}
