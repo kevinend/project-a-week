@@ -1,47 +1,28 @@
 #scope_export
 
-
-
-// [e1,e2,e3,e12,e13,e23...]
-// can map into this on the basis, space so you evaluate the grassmann products then 
-// but what if you have something like
-//  e1 ^ (e2 ^ e3)
-//   ^
-// e1 ^
-//    e2 e3
-// you don't want to eval and put in e2e3 then e1, or e2e3 and then e1e2e3
-// so exterior and regressive products return + and then those sums use the values
-// it's just the way she has to go unfortunately
-// man it would be cool to just work off the table...
-// 
-// maybe we thread the product through the recursive calls?
-
-
-
-// i had this thought that maybe we can use the table for everything...
-// like we iterate through there, instead of creating new memory we just go through
-// at the end you are left with sums
-// so you maintain the order and when you resolve an exterior product you just add it to the sum
-
-Result :: struct {
-	coefficient: int = 0;
-	updated: bool;
+Interpreter :: struct {
+	stack: 		  Stack(K_Element);  				   // used to execute grassmann products
+	multielement: [MAX_NUM_BASIS_ELEMENTS] K_Element;  // final output from expression evaluation
+	num_terms:    int;               				   // number of terms in the multielement
 }
 
-result:  	  [64] Result;
-result_order: [64] u8;
+reset_interpreter :: ( interp: *Interpreter ) {
 
-evaluate :: ( node: *Ast_Node, env: *Environment ) {
-
-	// memset to zero
-	for i: 0..result.count-1 {
-		result[i].coefficient = 0;
-		result[i].updated     = false;
-
-		result_order[i]  = 0;
+	if interp.stack.entries.count == 0 { // unitialized
+		interp.stack = stack_init( 50, K_Element );
 	}
 
-	
+	// should be memset!
+	for i: 0..interp.multielement.count-1 {
+		interp.multielement[i].coefficient =  0;
+		interp.multielement[i].basis 	   = -1;
+	}
+
+	interp.num_terms = 0;
+}
+
+evaluate :: ( node: *Ast_Node, env: *Environment, interp: *Interpreter ) {
+
 	// This application accepts the following forms of expressions.
 	// (1) Ident = Expression;
 	// (2) Ident;
@@ -51,6 +32,9 @@ evaluate :: ( node: *Ast_Node, env: *Environment ) {
 	// In case (2) we traverse the ast for the identifier and print out the resulting expression
 	// In case (3) we traverse the ast, simplify it as much as possible and print the result
 
+
+	reset_interpreter( interp );
+	
 	result: *Ast_Node = null;
 	if node.kind == .Identifier { // or we could notate it and just move on, like if there is a token and a semicolon then don't substitute
 		print( "We need to print the identifier\n" );
@@ -60,62 +44,58 @@ evaluate :: ( node: *Ast_Node, env: *Environment ) {
 	if node.kind == .Binary_Op {
 		binary_operator := cast(*Binary_Operator_Node)node;
 		if binary_operator.op == .Assign {
-			// this is eval and assign
-			result = eval( binary_operator.right, env );
-			print_ast( result );
+			// Eval and Assign
+			eval( binary_operator.right, env, interp ); // should this be called eval_grassmann_products_and_unary_operators
+			build_multielement( interp, env );
+
+			print( "Interp.multielement == %\n", interp.multielement );
+			print( "Number of multielements == %\n", interp.num_terms );
+
+			// so you want to iterate over this and generate an AST that we stick in the table
 
 			// once we have a symbol table we can add stuff in there
-			// just copy that over out of the temp memory into the symbol table
 		}
 		else {
-			// this is just eval the inline expression
-			// the parser is not set up for this yet!
+			// Eval the inline expression
+			// The parser is not set up for this yet!
 		}
 	}
 }
 
-eval :: ( node: *Ast_Node, env: *Environment ) -> ( result: *Ast_Node ) {
+eval :: ( node: *Ast_Node, env: *Environment, interp: *Interpreter ) {
 
-	result: *Ast_Node;
-	if node.kind == .K_Element || node.kind == .Literal {
-		result = clone_node( node );
+	success: bool;
+	if node.kind == .K_Element {
+		k_element_node := cast(*K_Element_Node)node;
+		success = stack_push( *interp.stack, k_element_node._k_element );
 	}
+	// DOESN"T HANDLE LITERALS LIKE NUMBERS BUT THESE SHOULD BE K-ELEMENTS
 	else
 	if node.kind == .Unary_Op {
 		unary_operator := cast(*Unary_Operator_Node)node;
-		operand := eval( unary_operator.operand, env );
-		result   = eval_unary_operator( unary_operator.op, operand, env );
+		eval( unary_operator.operand, env, interp );
+
+		arg: K_Element;
+		arg, success = stack_pop( *interp.stack );
+		result := eval_unary_operator( unary_operator.op, arg, env, interp );
 	}
 	else 
 	if node.kind == .Binary_Op {
 		// might want to check for errors or something after left and right???
 		binary_operator := cast(*Binary_Operator_Node)node;
-		left  := eval( binary_operator.left,  env );
-		right := eval( binary_operator.right, env );
+		eval( binary_operator.left,  env, interp );
+		eval( binary_operator.right, env, interp );
 
 		if binary_operator.op == .Exterior_Product || binary_operator.op == .Regressive_Product {
-			result = eval_binary_operator( binary_operator.op, left, right );
-		}
-		else 
-		if binary_operator.op == .Sum {
-			if left.kind == .K_Element {
-				
-			}
-		}
+			left:  K_Element;
+			right: K_Element;
 
-
-		
-/*
-		if left.kind == .K_Element && right.kind == .K_Element {
-			result = eval_binary_operator( binary_operator.op, cast(*K_Element_Node)left, cast(*K_Element_Node)right, env );
+			right, success = stack_pop( *interp.stack );
+			left,  success = stack_pop( *interp.stack );
+			eval_grassmann_product( binary_operator.op, left, right, env, interp );
 		}
-		else {
-			result = clone_node( node );
-		}
-*/
+		// intentionally excluding .Sum; handled using 'build_multielement'
 	}
-
-	return result;
 }
 
 #scope_file
@@ -125,35 +105,30 @@ Complement_Type :: enum u8 {
 	Right;
 }
 
-eval_unary_operator :: ( op: Unary_Op, operand: *Ast_Node, env: *Environment ) -> ( result: *Ast_Node ) {
+eval_unary_operator :: ( op: Unary_Op, arg: K_Element, env: *Environment, interp: *Interpreter ) {
 
-	result: *Ast_Node;
-
-	assert( operand.kind == .K_Element );
-	k_element := cast(*K_Element_Node)operand;
-
+	result: K_Element;
 	if op == {
 		case .Negation; {
-			k_element.coefficient *= -1;
-			result = new_k_element_node( k_element.coefficient, k_element.basis );
+			result = arg;
+			result.coefficient *= -1;
 		}
 		case .Left_Complement; {
-			result = eval_complement( .Left, k_element, env.n_element, env.dimension );
+			result = eval_complement( .Left, arg, env.n_element, env.dimension );
 		}
 		case .Right_Complement; {
-			result = eval_complement( .Right, k_element, env.n_element, env.dimension );
+			result = eval_complement( .Right, arg, env.n_element, env.dimension );
 		}
 	}
 
-	return result;
+	success := stack_push( *interp.stack, result );
 }
 
-eval_complement :: ( type: Complement_Type, k_element: *K_Element_Node, n_element: s64, dimension: int ) -> ( n_k_element: *K_Element_Node ) {
+eval_complement :: ( type: Complement_Type, k_element: K_Element, n_element: s64, dimension: int ) -> ( n_k_element: K_Element ) {
 
-	n_k_element := new_k_element_node( 
-		 coefficient = k_element.coefficient
-		,basis 	     = n_element ^ k_element.basis 
-	);
+	n_k_element: K_Element;
+	n_k_element.coefficient = k_element.coefficient;
+	n_k_element.basis       = n_element ^ k_element.basis;
 
 	// Need to determine whether the (n-k)-element should be negated.
 	// The procedure below effectively takes the exterior product between the args and determines the number
@@ -171,7 +146,7 @@ eval_complement :: ( type: Complement_Type, k_element: *K_Element_Node, n_elemen
 	return n_k_element;
 }
 
-anticommutative_coefficient :: ( lvalue: *K_Element_Node, rvalue: *K_Element_Node, dimension: int ) -> ( coefficient: int ) {
+anticommutative_coefficient :: ( lvalue: K_Element, rvalue: K_Element, dimension: int ) -> ( coefficient: int ) {
 
 	// This procedure calculates the number of swaps required to reorder the elements into the 'canonical' ordering to build the N-element.
 	// If the number of swaps is odd then the product needs negated.
@@ -189,7 +164,7 @@ anticommutative_coefficient :: ( lvalue: *K_Element_Node, rvalue: *K_Element_Nod
 	//
 	// If after completing this process we have swapped an odd number of times then we negate the final product.
 
-	temp: int = rvalue.basis;
+	temp := rvalue.basis;
 	num_swaps: int = 0;
 	for < i: dimension-1..0 {
 		if lvalue.basis & (1 << i) {
@@ -210,15 +185,10 @@ anticommutative_coefficient :: ( lvalue: *K_Element_Node, rvalue: *K_Element_Nod
 	else { return -1; }
 }
 
-eval_binary_operator :: ( op: Binary_Op, lvalue: *K_Element_Node, rvalue: *K_Element_Node, env: *Environment ) -> ( result: *Ast_Node ) {
+eval_grassmann_product :: ( op: Binary_Op, lvalue: K_Element, rvalue: K_Element, env: *Environment, interp: *Interpreter ) {
 	
-	result: *Ast_Node;
-
+	result: K_Element;
 	if op == {
-		case .Sum; {
-			// sums are handled in a second eval pass
-			result = new_binary_operator_node( op, lvalue, rvalue );
-		}
 		case .Exterior_Product; {
 			result = eval_exterior_product( lvalue, rvalue );
 		}
@@ -227,14 +197,14 @@ eval_binary_operator :: ( op: Binary_Op, lvalue: *K_Element_Node, rvalue: *K_Ele
 		}
 	}
 
-	return result;
+	success := stack_push( *interp.stack, result );
 }
 
 
 
-eval_exterior_product :: ( lvalue: *K_Element_Node, rvalue: *K_Element_Node ) -> ( result: *K_Element_Node ) {
+eval_exterior_product :: ( lvalue: K_Element, rvalue: K_Element ) -> ( result: K_Element ) {
 
-	result := new_k_element_node( coefficient = 0, basis = 0 );
+	result := K_Element.{ coefficient = 0, basis = 0 };
 
 	if lvalue.basis == 0 || rvalue.basis == 0 { // basis = 0 means grade-0 (scalar) element
 		result.coefficient  = lvalue.coefficient * rvalue.coefficient;
@@ -249,9 +219,9 @@ eval_exterior_product :: ( lvalue: *K_Element_Node, rvalue: *K_Element_Node ) ->
 	return result;
 }
 
-eval_regressive_product :: ( lvalue: *K_Element_Node, rvalue: *K_Element_Node, n_element: s64 ) -> ( result: *K_Element_Node ) {
+eval_regressive_product :: ( lvalue: K_Element, rvalue: K_Element, n_element: s64 ) -> ( result: K_Element ) {
 
-	result := new_k_element_node( coefficient = 0, basis = 0 );
+	result := K_Element.{ coefficient = 0, basis = 0 };
 	
 	if (lvalue.basis | rvalue.basis) == n_element {
 		result.coefficient = lvalue.coefficient * rvalue.coefficient;
@@ -263,21 +233,47 @@ eval_regressive_product :: ( lvalue: *K_Element_Node, rvalue: *K_Element_Node, n
 	return result;
 }
 
-// result table, iterate through there and create the final sums...
-// that might be a way to do it, all calculations end up in there
-// so once you hit a value it doesn't matter
-// let's try that so there isn't a separate, sum thingy
-eval_sums :: ( node: *Ast_Node ) -> ( result: *Ast_Node ) {
+build_multielement :: ( interp: *Interpreter, env: *Environment ) {
 
-	if node.kind == .K_Element {
+	// This procedure builds a multielement within the interpreter.
+	//
+	// Once all the sums in the tree are evaluated our interp.multielement will have a list of 
+	// integers representing the simplified basis elements that are part of the multielement.
+	//
+	// Then the application can decide whether that needs converted into an AST for injection into
+	// another expression on a subsequent application loop or converted to a string to present to the user.
+
+	// walk the stack and build the multielement in DISPLAY order by using the basis_elements lookup table.
+	// the multielement will be sparse after this operation however it will contain the correct sums for each
+	// basis element that was part of the original ast.
+
+	while !stack_is_empty( *interp.stack ) {
+		element, success := stack_pop( *interp.stack );
+		display_index := env.basis_elements[element.basis].display_order;
+
+		interp.multielement[display_index].coefficient += element.coefficient;
+		interp.multielement[display_index].basis        = element.basis; // use this as an implicit flag to indicate this index was updated
 	}
-	
-	if node.kind == .Binary_Op {
-		// since we resolved all grassmann products and unary operators then this must be a sum!
-		binary_operator := cast(*Binary_Operator_Node)node;
-		assert( binary_operator.op == .Sum );
-		
-		left  := eval_sum( binary_operator.left  );
-		right := eval_sum( binary_operator.right );
+
+	// filter/pack the multielement to only include non-empty indices
+	// [s1e1, ... s2e1^e2 ... s3e1^e2^e3] will be condensed down to [s1e2,s2e1^e2,s3e1^e2^e3]
+
+	num_scalar_terms: int = 0;
+	end: int = 0;
+	for i: 0..63 { // this needs changed to the total number of basis elements, should just be part of the environment or something
+		if interp.multielement[i].basis >= 0 {
+			if interp.multielement[i].basis == 0 {
+				num_scalar_terms += 1;
+			}
+			interp.multielement[end] = interp.multielement[i];
+			interp.num_terms += 1;
+			end += 1;	
+		}
 	}
+
+	if num_scalar_terms > 0 {
+		interp.num_terms -= (num_scalar_terms - 1); // count scalars a single time
+	}
+
+	return;
 }

@@ -1,5 +1,62 @@
 #scope_export
 
+add :: ( x: int, y: int ) -> (z: int) {
+	return x + y;
+}
+
+GLOBAL :: #run add(3,4);
+
+/*
+	hmm there is a lot of indirection in here for whatever little benefit
+
+	service locator pattern (not in OOP land)
+	Three classes
+		Audio
+		Console-Audio
+		Locator
+			Audio *
+
+	Mix and Match, i do like the idea of removing the managers and stuff that sounds like a good idea 
+	to me honestly
+
+	these are all member functions, 
+	you can fake that with function pointers
+
+	Audio {
+		function1()
+		function2()
+		function3()
+	}
+
+	Console-Audio {
+		using audio: Audio; if you don't need any info from there then you can use the APIs to do the thing
+	}
+
+	Service_Locator_Audio {
+		(audio)
+
+
+	}
+
+	register_service()
+
+	console_audio_play_sound
+	console_audio_play
+	and you could set that at compile-time i'd think
+	then you could say
+
+	audio.play_audio()
+	audio.stop_audio()
+
+	something.log_something();
+
+	then you have some function that is like
+	function1 :: ( Console_Audio, something else )
+	but you have to pass that in and it isn't automatically passed into those functions
+
+
+*/
+
 
 // @Incomplete: Jai doesn't have an abstraction for reading from stdin yet...
 /*
@@ -429,7 +486,35 @@ generate_basis_symbol :: ( element: int, grade: int, n: int, one_element_symbols
 	return symbol;
 }
 
+#load "stack.jai";
+
 main :: () {
+
+	print( "Global == %\n", GLOBAL );
+
+{
+	values: [5] int;
+	for i: 0..values.count-1 {
+		values[i] = -1;
+	}
+
+	// values[0] = 1;
+	// values[1] = 2;
+	values[4] = 5;
+	end: int = 0;
+	num_values: int = 0;
+
+	for i: 0..values.count-1 {
+		if values[i] > 0 {
+			values[end] = values[i];
+			num_values += 1;
+			end += 1;
+		}
+	}
+
+	print( "Values == %\n", values );
+
+}
 
 {
 	// so now you can store the elements as a coefficient

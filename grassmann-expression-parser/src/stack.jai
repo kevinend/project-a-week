@@ -41,19 +41,19 @@ stack_deinit :: ( stack: *Stack ) {
 	return;
 }
 
-push :: insert;
-pop  :: remove_;
-peek :: head;
+stack_push :: insert;
+stack_pop  :: remove_;
+stack_peek :: stack_head;
 
-head :: inline (stack: Stack($T)) -> int {
+stack_head :: inline (stack: Stack($T)) -> int {
 	return read( stack, stack.head - 1 );	
 }
 
-is_full :: inline (stack: Stack($T)) -> bool #must {
+stack_is_full :: inline (stack: Stack($T)) -> bool #must {
 	return (stack.num_entries == stack.entries.count);
 }
 
-is_empty :: inline (stack: Stack($T)) -> bool #must {
+stack_is_empty :: inline (stack: Stack($T)) -> bool #must {
 	return (stack.num_entries == 0);
 }
 
@@ -87,7 +87,7 @@ search :: (stack: Stack($T), value: T) -> ( index: int, found: bool #must ) {
 
 insert :: (stack: *Stack($T), value: T) -> (success: bool #must) {
 
-	if is_full( <<stack ) {
+	if stack_is_full( <<stack ) {
 		Basic.print( "Stack insertion failed. The stack is full!\n" );
 		return false;
 	}
@@ -103,7 +103,7 @@ insert :: (stack: *Stack($T), value: T) -> (success: bool #must) {
 remove_ :: (stack: *Stack($T)) -> (value: T, removed: bool #must ) {
 
 	
-	if is_empty( <<stack ) {
+	if stack_is_empty( <<stack ) {
 		Basic.print( "Stack removal failed. The stack is empty!\n" );
 		dummy: T; // gets whatever default value or an initiliazed value of type T
 		return dummy, false;

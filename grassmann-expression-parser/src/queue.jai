@@ -44,24 +44,24 @@ queue_deinit :: (queue: *Queue ) {
 	return;
 }
 
-enqueue :: insert;
-dequeue :: remove_;
-peek    :: head;
+queue_enqueue :: insert;
+queue_dequeue :: remove_;
+queue_peek    :: queue_head;
 
-head :: inline (queue: Queue($T)) -> int {
+queue_head :: inline (queue: Queue($T)) -> int {
 	return read( queue, queue.head );	
 }
 
-tail :: inline (queue: Queue($T)) -> int {
+queue_tail :: inline (queue: Queue($T)) -> int {
 	// .tail's index will point to the next available entry, so the 'tail' is really the prior inserted element
 	return read( queue, queue.tail - 1 );
 }
 
-is_full :: inline (queue: Queue($T)) -> bool #must {
+queue_is_full :: inline (queue: Queue($T)) -> bool #must {
 	return (queue.num_entries == queue.entries.count);
 }
 
-is_empty :: inline (queue: Queue($T)) -> bool #must {
+queue_is_empty :: inline (queue: Queue($T)) -> bool #must {
 	return (queue.num_entries == 0);
 }
 
@@ -72,7 +72,7 @@ tests :: () {
 
 	Basic.print( "size_of(Queue) == %\n", size_of(Queue(int)) );
 
-	queue: Queue(int) = init( 5, int );
+	queue: Queue(int) = queue_init( 5, int );
 	Basic.print( "Queue.T == %\n", queue.T );
 
 	{
@@ -91,9 +91,9 @@ tests :: () {
 	success =  insert( *queue, 60 );
 	success =  insert( *queue, 70 );
 
-	p := peek( queue );
-	h := head( queue );
-	t := tail( queue );
+	p := queue_peek( queue );
+	h := queue_head( queue );
+	t := queue_tail( queue );
 
 	found, index := search( queue, 10 );
 	if found {
@@ -117,29 +117,29 @@ tests :: () {
 
 	Basic.print( "(p,h,t) == (%,%,%)\n", p, h, t );
 
-	while !is_empty( queue ) {
-		removed, value := dequeue( *queue );
+	while !queue_is_empty( queue ) {
+		removed, value := queue_dequeue( *queue );
 		Basic.print( "value == %\n", value );
 
-		p = peek( queue );
-		h = head( queue );
-		t = tail( queue );
+		p = queue_peek( queue );
+		h = queue_head( queue );
+		t = queue_tail( queue );
 
 		Basic.print( "(p,h,t) == (%,%,%)\n", p, h, t );
 	}
 
 	success = insert( *queue, 70 );
-	p = peek( queue );
-	h = head( queue );
-	t = tail( queue );
+	p = queue_peek( queue );
+	h = queue_head( queue );
+	t = queue_tail( queue );
 
 	Basic.print( "(p,h,t) == (%,%,%)\n", p, h, t );
 	Basic.print( "queue == %\n", queue );
 
 	success = insert( *queue, 80 );
-	p = peek( queue );
-	h = head( queue );
-	t = tail( queue );
+	p = queue_peek( queue );
+	h = queue_head( queue );
+	t = queue_tail( queue );
 
 	Basic.print( "(p,h,t) == (%,%,%)\n", p, h, t );
 	Basic.print( "queue == %\n", queue );
@@ -186,7 +186,7 @@ search :: (queue: Queue($T), value: T) -> (found: bool #must, index: int) {
 
 insert :: (queue: *Queue($T), value: T) -> (success: bool #must) {
 
-	if is_full( <<queue ) {
+	if queue_is_full( <<queue ) {
 		Basic.print( "Queue insertion failed. The queue is full!\n" );
 		return false;
 	}

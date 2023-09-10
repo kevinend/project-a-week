@@ -15,6 +15,7 @@ main :: () {
 	env: 	Environment;
 	lexer:  Lexer;
 	parser: Parser;
+	interp: Interpreter;
 
 	environment_set_dimension_and_n_element( *env, 4 );
 	environment_set_one_element_symbols( *env, string.["e1","e2","e3","e4"] );
@@ -48,7 +49,7 @@ main :: () {
 		print_ast( ast );
 		print( "\n" );
 
-		evaluate( ast, *env );
+		evaluate( ast, *env, *interp );
 	/*
 		print( "POST EVAL AST:\n" );
 		print_ast( result );
@@ -70,6 +71,8 @@ main :: () {
 #load "ast.jai";
 #load "expand.jai";
 #load "eval.jai";
+#load "queue.jai";
+#load "stack.jai";
 
 #import "Basic";
 #import "Windows";

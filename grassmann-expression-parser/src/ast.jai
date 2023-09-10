@@ -17,8 +17,7 @@ K_Element_Node :: struct {
 
 	#as using _kind: Ast_Node;
 	
-	coefficient: int;
-	basis: s64; // bit-vector for the one elements in the space
+	using _k_element: K_Element;
 }
 
 Identifier_Node :: struct {

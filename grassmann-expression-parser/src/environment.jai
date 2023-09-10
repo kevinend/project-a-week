@@ -7,16 +7,40 @@
 // and everyone's index is hosed!!!
 
 MAX_DIMENSION :: 6;
+MAX_NUM_BASIS_ELEMENTS :: #run power( 2, MAX_DIMENSION );
 
 Basis_Element :: struct {
-	grade: int;
-	symbol: string;
+	display_order:  int;
+	grade:  		int;
+	symbol: 		string;
+}
+
+Basis_Element_Index :: #type s64;
+
+/*
+	All K-Elements are built using the bit-indices of the 1-elements;
+	Take G(R4) as an example:
+		e1 = 1 = (1 << 1)
+		e2 = 2 = (1 << 2)
+		e3 = 4 = (1 << 3)
+		e4 = 8 = (1 << 4)
+
+	The 'Basis_Element_Index' represents the INTEGER value of the product of any given number of 1-elements.
+	As examples:
+		e1^e2 	 is equal to  3 or e1 | e2.
+		e1^e3^e4 is equal to 13 or e1 | e3 | e4
+		etc..
+*/
+
+K_Element :: struct {
+	coefficient:   int;
+	basis:         Basis_Element_Index;
 }
 
 Environment :: struct {
 	dimension: int;
 	one_element_symbols: [] string;
-	basis_elements:      [64] Basis_Element; // based on the MAX_DIMENSION
+	basis_elements:      [MAX_NUM_BASIS_ELEMENTS] Basis_Element;
 	n_element:           s64;
 }
 
@@ -42,29 +66,57 @@ environment_set_one_element_symbols :: ( env: *Environment, one_element_symbols:
 environment_generate_basis_elements :: ( env: *Environment ) {
 
 	// This implementation is admittedly pretty slow.
-	// Both the bit/pop count and the generation of the basis element symbols require a lot of
-	// iteration and bit checking.
+	// Building the display order of basis symbols, the bit/pop count and the generation of the basis element 
+	// symbols require a lot of iteration and bit checking.
 	//
 	// This process shouldn't be executed very often during normal use.
-	// It is typical to declare a space and just stick to it for the use of the app.
+	// It is typical to declare a space and just stick to it.
+	//
+	// Also using the bit structure of elements of grades > 1 as simple AND and ORs makes doing this worth the
+	// effort, at least for now.
 	
 	assert( env.dimension == env.one_element_symbols.count );
+	assert( env.dimension <= MAX_DIMENSION );
+
+	Order :: struct {
+		accum:  int; // n_choose_k for n-1; so each element at index i has the sum total of basis elements prior to it	
+		cursor: int; // this is the cursor for a particular grade, it will iterate up to the num of basis elements for a particular grade given the dimension
+	}
+
+	basis_element_display_order: [MAX_DIMENSION] Order;
+
+	basis_element_display_order[0].accum  = 1;
+	basis_element_display_order[0].cursor = 0;
+	for i: 1..env.dimension-1 {
+		basis_element_display_order[i].accum  = choose( env.dimension, i ) + basis_element_display_order[i-1].accum;
+		basis_element_display_order[i].cursor = 0;
+	}
+
+	total_num_basis_elements: int = power( 2, env.dimension );
+
+	env.basis_elements[0].display_order = 0;
+	env.basis_elements[0].grade  		= 0;
+	env.basis_elements[0].symbol 		= "1";
 	
-	num_basis_elements: int = power( 2, env.dimension );
+	for i: 1..total_num_basis_elements-1 {
+		
+		grade := pop_count( i );
 
-	grade:  int;
-	symbol: string;
+		env.basis_elements[i].display_order = basis_element_display_order[grade-1].accum + basis_element_display_order[grade].cursor;
+		env.basis_elements[i].grade  		= grade;
+		env.basis_elements[i].symbol 		= generate_basis_symbol( element = i, grade, env.dimension, env.one_element_symbols );
 
-	for i: 0..num_basis_elements-1 {
-		grade  = pop_count( i );
-		symbol = generate_basis_symbol( element = i, grade, env.dimension, env.one_element_symbols );
-
-		env.basis_elements[i].grade  = grade;
-		env.basis_elements[i].symbol = symbol;
+		basis_element_display_order[grade].cursor += 1;
 	}
 }
 
 #scope_file
+
+choose :: (n: int, k: int) -> (value: int) {
+	// example: choose(4,2) == (4*3)/(2*1) == 6
+    if k == 0 return 1;
+    return (n * choose(n-1, k-1)) / k;
+}
 
 power :: ( a: int, b: int ) -> ( c: int ) {
 	
