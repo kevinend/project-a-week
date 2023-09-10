@@ -41,6 +41,7 @@ Environment :: struct {
 	dimension: int;
 	one_element_symbols: [] string;
 	basis_elements:      [MAX_NUM_BASIS_ELEMENTS] Basis_Element;
+	num_basis_elements:  int;
 	n_element:           s64;
 }
 
@@ -54,6 +55,8 @@ environment_set_dimension_and_n_element :: ( env: *Environment, dimension: int )
 		env.n_element |= (1 << i);
 	}
 
+	env.num_basis_elements = power( 2, dimension );
+
 	return;
 }
 
@@ -63,21 +66,34 @@ environment_set_one_element_symbols :: ( env: *Environment, one_element_symbols:
 	return;
 }
 
-environment_generate_basis_elements :: ( env: *Environment ) {
 
-	// This implementation is admittedly pretty slow.
-	// Building the display order of basis symbols, the bit/pop count and the generation of the basis element 
-	// symbols require a lot of iteration and bit checking.
-	//
-	// This process shouldn't be executed very often during normal use.
-	// It is typical to declare a space and just stick to it.
-	//
-	// Also using the bit structure of elements of grades > 1 as simple AND and ORs makes doing this worth the
-	// effort, at least for now.
+environment_generate_basis_elements :: ( env: *Environment ) {
 	
+	// Generates the list of basis elements for the currently declared dimension.
+	//
+	// Since the application uses bit operations of 1-elements to build elements of higher grade
+	// the order of the elements needs determined ahead of time then referenced later when building the final expression.
+	//
+	// We want a deterministic printing/display order of the elements.
+	//
+	// Example: (Not all basis elements shown)
+	//  N = 3
+	//  e1 	  = (1 << 1) = 1
+	//  e2 	  = (1 << 2) = 2
+	//  e1^e2 =  1  | 2  = 3 
+    //  e3 	  = (1 << 3) = 4
+    //
+	//
+	// If we have the basis elements e1, e2, e3 and e1^e2 without a 'display-order' field an expression
+	// could print interleaved grades like e1 + e2 + e1^e2 + e3, which is not ideal.
+	//
+	// The display order field allows us to print 1-elements, followed by 2-elements, followed by ...
+	// all the way up to the N-element.
+
 	assert( env.dimension == env.one_element_symbols.count );
 	assert( env.dimension <= MAX_DIMENSION );
 
+	// TODO: I hate the name of this but can't think of anything better right now
 	Order :: struct {
 		accum:  int; // n_choose_k for n-1; so each element at index i has the sum total of basis elements prior to it	
 		cursor: int; // this is the cursor for a particular grade, it will iterate up to the num of basis elements for a particular grade given the dimension
@@ -92,13 +108,11 @@ environment_generate_basis_elements :: ( env: *Environment ) {
 		basis_element_display_order[i].cursor = 0;
 	}
 
-	total_num_basis_elements: int = power( 2, env.dimension );
-
 	env.basis_elements[0].display_order = 0;
 	env.basis_elements[0].grade  		= 0;
 	env.basis_elements[0].symbol 		= "1";
 	
-	for i: 1..total_num_basis_elements-1 {
+	for i: 1..env.num_basis_elements-1 {
 		
 		grade := pop_count( i );
 
