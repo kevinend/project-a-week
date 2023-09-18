@@ -1,10 +1,5 @@
 #scope_export
 
-// TODO: Identifier resolution!!!
-
-// since we store values as Ast_Nodes we need a way to 'hook in' the identifier values in the symbol table
-// then make sure to expand then
-
 expand :: ( node: *Ast_Node ) -> ( subtree: *Ast_Node ) {
 
 	// Distribute the grassmann products over the arithmetic product (sum)

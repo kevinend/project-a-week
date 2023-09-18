@@ -4,7 +4,9 @@ MAIN:
 --Allow free-form expressions, so just e1 ^ e1 should return the result to the console
 
 LEXER:
---Convert number to K-Element with basis = 0
+xxConvert number to K-Element with basis = 0
+--How do we handle empty input in the buffer or zero tokens?
+--Remove the one element symbols and pass in the environment directly for symbol resolution
 --Error messages
 
 PARSER:
@@ -14,3 +16,11 @@ PARSER:
 
 EVAL:
 --Interior product, use regressive with comp of second arg
+
+ENVIRONMENT:
+--Should we clear all symbols on an environment change? Yes we have to
+--Don't handle changing dimensions gracefully
+   If the dimension is less than the current but the symbols didn't change we don't have to do anything
+   If the symbols changed then we have to regenerate the symbols
+   If the dimension expands then we need to go through this whole process again because we introduced new one elements
+   and everyone's index is hosed!!!

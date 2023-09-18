@@ -1,11 +1,5 @@
 #scope_export
 
-// TODO: Doesn't handle changing dimensions gracefully
-// If the dimension is less than the current but the symbols didn't change we don't have to do anything
-// If the symbols changed then we have to regenerate the symbols
-// If the dimension expands then we need to go through this whole process again because we introduced new one elements
-// and everyone's index is hosed!!!
-
 MAX_DIMENSION :: 6;
 MAX_NUM_BASIS_ELEMENTS :: #run power( 2, MAX_DIMENSION );
 
@@ -66,7 +60,6 @@ environment_set_one_element_symbols :: ( env: *Environment, one_element_symbols:
 	return;
 }
 
-
 environment_generate_basis_elements :: ( env: *Environment ) {
 	
 	// Generates the list of basis elements for the currently declared dimension.
@@ -93,34 +86,30 @@ environment_generate_basis_elements :: ( env: *Environment ) {
 	assert( env.dimension == env.one_element_symbols.count );
 	assert( env.dimension <= MAX_DIMENSION );
 
-	// TODO: I hate the name of this but can't think of anything better right now
-	Order :: struct {
-		accum:  int; // n_choose_k for n-1; so each element at index i has the sum total of basis elements prior to it	
-		cursor: int; // this is the cursor for a particular grade, it will iterate up to the num of basis elements for a particular grade given the dimension
-	}
+	accum_elements_per_grade: [MAX_DIMENSION] int; // accumulated basis elements; number of elements at the grade specified + the num elements in any prior grade
+	cursors: 				  [MAX_DIMENSION] int;
 
-	basis_element_display_order: [MAX_DIMENSION] Order;
+	accum_elements_per_grade[0] = 1;
+	cursors[0] = 0;
 
-	basis_element_display_order[0].accum  = 1;
-	basis_element_display_order[0].cursor = 0;
 	for i: 1..env.dimension-1 {
-		basis_element_display_order[i].accum  = choose( env.dimension, i ) + basis_element_display_order[i-1].accum;
-		basis_element_display_order[i].cursor = 0;
+		accum_elements_per_grade[i] = choose( env.dimension, i ) + accum_elements_per_grade[i-1];
+		cursors[i] = 0;
 	}
 
 	env.basis_elements[0].display_order = 0;
-	env.basis_elements[0].grade  		= 0;
-	env.basis_elements[0].symbol 		= "1";
-	
+	env.basis_elements[0].grade         = 0; 
+	env.basis_elements[0].symbol        = ""; // if we print the basis elements to the user make sure to replace this!
+
 	for i: 1..env.num_basis_elements-1 {
 		
 		grade := pop_count( i );
 
-		env.basis_elements[i].display_order = basis_element_display_order[grade-1].accum + basis_element_display_order[grade].cursor;
+		env.basis_elements[i].display_order = accum_elements_per_grade[grade-1] + cursors[grade];
 		env.basis_elements[i].grade  		= grade;
 		env.basis_elements[i].symbol 		= generate_basis_symbol( element = i, grade, env.dimension, env.one_element_symbols );
 
-		basis_element_display_order[grade].cursor += 1;
+		cursors[grade] += 1;
 	}
 }
 

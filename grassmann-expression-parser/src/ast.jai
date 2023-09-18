@@ -3,10 +3,10 @@
 Node_Kind :: enum {
 	
 	K_Element; // support for 'origin' as basis, so no longer just k-vectors
+	Literal;
+	Identifier;
 	Unary_Op;
 	Binary_Op;
-	Identifier;
-	Literal;
 }
 
 Ast_Node :: struct {
@@ -14,19 +14,19 @@ Ast_Node :: struct {
 }
 
 K_Element_Node :: struct {
-
-	#as using _kind: Ast_Node;
 	
+	#as using _kind: Ast_Node;	
 	using _k_element: K_Element;
 }
 
 Identifier_Node :: struct {
-
+	
 	#as using _kind: Ast_Node;
 	name: string;
 }
 
 Literal_Node :: struct {
+
 	#as using _kind: Ast_Node;
 	value: int;
 }
@@ -53,7 +53,6 @@ Binary_Op :: enum {
 	Difference;
 	Exterior_Product;
 	Regressive_Product;
-	Regressive_Product_Post_CFT; 
 	Interior_Product;
 }
 
@@ -119,17 +118,6 @@ new_k_element_node :: ( coefficient: int, basis: s64 ) -> ( node: *K_Element_Nod
 	return node;
 }
 
-new_identifier_node :: ( name: string ) -> ( node: *Identifier_Node ) {
-
-	node := New(Identifier_Node);
-	assert( node != null );
-
-	node.kind = .Identifier;
-	node.name = copy_string( name ); // seems wasteful, can we intern???
-
-	return node;
-}
-
 new_literal_node :: ( value: int ) -> ( node: *Literal_Node ) {
 
 	node := New(Literal_Node);
@@ -137,6 +125,17 @@ new_literal_node :: ( value: int ) -> ( node: *Literal_Node ) {
 	
 	node.kind = Node_Kind.Literal;
 	node.value = value;
+
+	return node;
+}
+
+new_identifier_node :: ( name: string ) -> ( node: *Identifier_Node ) {
+
+	node := New(Identifier_Node);
+	assert( node != null );
+
+	node.kind = .Identifier;
+	node.name = copy_string( name ); // seems wasteful, can we intern???
 
 	return node;
 }

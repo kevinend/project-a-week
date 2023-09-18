@@ -15,9 +15,6 @@ Lexer :: struct {
 	tokens: [MAX_NUM_TOKENS_PER_EXPRESSION] Token;
 	num_tokens: int = 0;
 
-	// 1-element symbols set at runtime by the user
-	basis_one_element_symbols: [] string;
-
 	temp_buffer: [LEXER_TEMP_BUFFER_LENGTH] u8;
 }
 
@@ -33,17 +30,7 @@ lexer_set_input :: ( lexer: *Lexer, user_input: string ) {
 	return;
 }
 
-lexer_set_basis_one_element_symbols :: ( lexer: *Lexer, basis_one_element_symbols: [] string ) {
-	
-	// basis_one_element symbols can change at runtime based on user input
-	// lexer needs to know about the current set of symbols
-
-	lexer.basis_one_element_symbols = basis_one_element_symbols;
-	return;
-
-}
-
-lexer_generate_tokens :: ( lexer: *Lexer ) {
+lexer_generate_tokens :: ( lexer: *Lexer, env: *Environment ) {
 
 	clear_tokens :: ( lexer: *Lexer ) {
 		// Prior line's tokens get overwritten on every new input line.
@@ -72,7 +59,7 @@ lexer_generate_tokens :: ( lexer: *Lexer ) {
 		}
 
 		if begins_identifier( c0 ) {
-			token = compose_identifier_keyword_or_basis_symbol_token( lexer );
+			token = compose_identifier_keyword_or_basis_symbol_token( lexer, env.one_element_symbols );
 			add_token( lexer, token );
 			continue;	
 		}
@@ -188,35 +175,37 @@ lexer_generate_tokens :: ( lexer: *Lexer ) {
 	return;	
 }
 
-// TODO: Remove this, just use the debugger
-print_tokens :: ( lexer: *Lexer ) {
+print_tokens :: ( lexer: *Lexer, header: string ) {
+	
+	print( "%\n", header );
 
 	for i: 0..lexer.num_tokens-1 {
 		token := lexer.tokens[i];
 		if token.type == {
-			case .Error;              { print( "ERROR\n" ); }
-			case .End_Of_Input;       { print( "END_OF_INPUT\n" ); }
-			case .Semicolon; 		  { print( "SEMICOLON\n" );  }
-			case .Open_Paren;         { print( "OPEN_PAREN\n" ); }
-			case .Close_Paren; 		  { print( "CLOSE_PAREN\n" );}
-			case .Open_Square_Brace;  { print( "OPEN_SQUARE_BRACE\n" ); }
-			case .Close_Square_Brace; { print( "CLOSE_SQUARE_BRACE\n" ); }
-			case .Comma;			  { print( "COMMA\n" ); }
-			case .Identifier; 		  { print( "Token == %\n", token.identifier ); }
-			case .Keyword_Dimension;      { print( "KEYWORD_DIMENSION\n" ); }
-			case .Keyword_Basis_Elements; { print( "KEYWORD_BASIS_ELEMENTS\n" ); }
-			case .Basis_Element;          { print( "Basis elements %\n", token.basis ); }
-			case .Number;     		  { print( "Token == %\n", token.number ); }
-			case .Plus; 		 	  { print( "PLUS\n"  ); }
-			case .Minus;      		  { print( "MINUS\n" ); }
-			case .Assign;             { print( "ASSIGN\n" ); }
-			case .Exterior_Product;   { print( "EXTERIOR\n" ); }
-			case .Regressive_Product; { print( "REGRESSIVE\n" ); }
-			case .Interior_Product;   { print( "INTERIOR\n" ); }
-			case .Left_Complement;    { print( "LEFT COMPLEMENT\n" ); }
-			case .Right_Complement;   { print( "RIGHT COMPLEMENT\n" ); }
+			case .Error;              		{ print( "ERROR\n" ); }
+			case .End_Of_Input;       		{ print( "END_OF_INPUT\n" ); }
+			case .Semicolon; 		  		{ print( "SEMICOLON\n" );  }
+			case .Open_Paren;         		{ print( "OPEN_PAREN\n" ); }
+			case .Close_Paren; 		  		{ print( "CLOSE_PAREN\n" );}
+			case .Open_Square_Brace;  	  	{ print( "OPEN_SQUARE_BRACE\n" ); }
+			case .Close_Square_Brace; 	  	{ print( "CLOSE_SQUARE_BRACE\n" ); }
+			case .Comma;			  	  	{ print( "COMMA\n" ); }
+			case .Identifier; 		  	  	{ print( "Token == %\n", token.identifier ); }
+			case .Keyword_Dimension;      	{ print( "KEYWORD_DIMENSION\n" ); }
+			case .Keyword_Basis_Elements; 	{ print( "KEYWORD_BASIS_ELEMENTS\n" ); }
+			case .Basis_Element;          	{ print( "Basis elements %\n", token.basis ); }
+			case .Number;     		  		{ print( "Token == %\n", token.number ); }
+			case .Plus; 		 	  		{ print( "PLUS\n"  ); }
+			case .Minus;      		  		{ print( "MINUS\n" ); }
+			case .Assign;             		{ print( "ASSIGN\n" ); }
+			case .Exterior_Product;   		{ print( "EXTERIOR\n" ); }
+			case .Regressive_Product; 		{ print( "REGRESSIVE\n" ); }
+			case .Interior_Product;   		{ print( "INTERIOR\n" ); }
+			case .Left_Complement;    		{ print( "LEFT COMPLEMENT\n" ); }
+			case .Right_Complement;   		{ print( "RIGHT COMPLEMENT\n" ); }
 		}
 	}
+	print( "\n" );
 
 	return;
 }
@@ -246,7 +235,7 @@ begins_identifier :: inline ( c: u8 ) -> ( yes_no: bool ) {
 	return is_alpha( c ) ||  c == #char "_";
 }
 
-compose_identifier_keyword_or_basis_symbol_token :: ( lexer: *Lexer ) -> ( token: Token ) {
+compose_identifier_keyword_or_basis_symbol_token :: ( lexer: *Lexer, basis_one_element_symbols: [] string ) -> ( token: Token ) {
 
 	continues_identifier :: ( c: u8 ) -> ( yes_no: bool ) {
 		return is_alnum( c ) || c == #char "_";
@@ -319,7 +308,7 @@ compose_identifier_keyword_or_basis_symbol_token :: ( lexer: *Lexer ) -> ( token
 		token.type = keyword_type;
 	}
 	else {
-		is_basis_element, index := is_identifier_basis_element( token.identifier, lexer.basis_one_element_symbols );
+		is_basis_element, index := is_identifier_basis_element( token.identifier, basis_one_element_symbols ); // lexer.basis_one_element_symbols );
 		if is_basis_element {
 			token.type  = .Basis_Element;
 			token.basis = (1 << index); // see note above, wasting the string copy, we don't need the sybmol/identifier anymore

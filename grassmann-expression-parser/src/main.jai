@@ -2,14 +2,6 @@
 
 PROMPT :: ">> ";
 
-/*
-	IDENT --> store the nodes from the RIGHT of the .ASSIGN statement
-
-	FLOW OF CONTROL:
-		Dimension=4; // if this command is found then we need to prompt for the basis elements
-					 // or something haven't figured out the exact mechanics yet
-*/
-
 main :: () {
 
 	env: 	Environment;
@@ -29,33 +21,24 @@ main :: () {
 		if user_input == "exit" { break; }
 
 		lexer_set_input( *lexer, user_input );
-		lexer_set_basis_one_element_symbols( *lexer, env.one_element_symbols );
-		lexer_generate_tokens( *lexer );
+		lexer_generate_tokens( *lexer, *env );
 
-		// what do we do if the input is empty? we should skip it, not sure that is happening in the lexer?
-		// if no_tokens( *lexer ) { continue; } or something like that
-
-		print( "\nTOKENS:\n" );
-		print_tokens( *lexer );
+		print_tokens( *lexer, "Tokens:" );
 
 		parser_set_tokens( *parser, lexer.tokens, lexer.num_tokens );
-		parser_generate_ast( *parser );
+		parser_generate_ast( *parser, *interp );
 
-		print( "\nAST:\n" );
-		print_ast( parser.ast );
+//		print( "\nAST:\n" );
+//		print_ast( parser.ast, "AST:" );
 
 		ast    := expand( parser.ast );
-		print( "\nPOST-EXPAND AST:\n" );
-		print_ast( ast );
-		print( "\n" );
+//		print( "\nPOST-EXPAND AST:\n" );
+//		print_ast( ast, *env );
+//		print( "\n" );
 
 		evaluate( ast, *env, *interp );
-	/*
-		print( "POST EVAL AST:\n" );
-		print_ast( result );
-		print( "\n" );
-	*/
 
+		print_symbol_table( *interp );
 	}
 
 	return;

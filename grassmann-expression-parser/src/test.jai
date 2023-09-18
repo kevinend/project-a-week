@@ -490,7 +490,33 @@ generate_basis_symbol :: ( element: int, grade: int, n: int, one_element_symbols
 
 main :: () {
 
-	print( "Global == %\n", GLOBAL );
+	x := tprint( "Hello" );
+	y := tprint( "World" );
+
+	print( "Temporary storage uses % bytes\n", context.temporary_storage.total_bytes_occupied );
+	reset_temporary_storage(); 
+	print( "Temporary storage uses % bytes\n", context.temporary_storage.total_bytes_occupied );
+
+	result: [..] int;
+	result.allocator = temp;
+
+	array_add( *result, 10 );
+	array_add( *result, 11 );
+	array_add( *result, 12 );
+	array_add( *result, 13 );
+	array_add( *result, 14 );
+	array_add( *result, 15 );
+	array_add( *result, 16 );
+	array_add( *result, 17 );
+
+	result2: [..] int;
+	result2.allocator = temp;
+	array_add( *result2, 100 );
+
+
+	print( "Temporary storage uses % bytes\n", context.temporary_storage.total_bytes_occupied );
+	reset_temporary_storage(); 
+	print( "Temporary storage uses % bytes\n", context.temporary_storage.total_bytes_occupied );
 
 {
 	values: [5] int;

@@ -1,15 +1,43 @@
 #scope_export
 
+Symbol :: struct {
+	name:   	 string;
+	ast:   		*Ast_Node;
+	expression:  string;
+}
+
+MAX_NUM_SYMBOLS :: 8;
+
 Interpreter :: struct {
 	stack: 		  Stack(K_Element);  				   // used to execute grassmann products
 	multielement: [MAX_NUM_BASIS_ELEMENTS] K_Element;  // final output from expression evaluation
-	num_terms:    int;               				   // number of terms in the multielement
+	num_terms:    int;           				   	   // number of terms in the multielement
+
+	symbols: [MAX_NUM_SYMBOLS] Symbol;
+	num_symbols: int;
+}
+
+print_symbol_table :: ( interp: *Interpreter ) {
+
+	print( "Symbols belonging to symbol table:\n" );
+	for i: 0..interp.num_symbols-1 {
+		print( "%\n", interp.symbols[i].name );	
+	}
+	print( "\n" );
+
+	print( "Name = Value\n" );
+	for i: 0..interp.num_symbols-1 {
+		print( "% = %\n", interp.symbols[i].name, interp.symbols[i].expression );
+	}
+	print( "\n" );
+
+	return;
 }
 
 reset_interpreter :: ( interp: *Interpreter ) {
 
 	if interp.stack.entries.count == 0 { // unitialized
-		interp.stack = stack_init( 50, K_Element );
+		interp.stack = stack_init( 50, K_Element ); // TODO: make this reasonable
 	}
 
 	// should be memset!
@@ -19,6 +47,21 @@ reset_interpreter :: ( interp: *Interpreter ) {
 	}
 
 	interp.num_terms = 0;
+}
+
+lookup_symbol :: ( name: string, interp: *Interpreter ) -> ( value: *Ast_Node, success: bool ) {
+	
+	value: *Ast_Node = null;
+	success: bool = false;
+	for i: 0..interp.num_symbols-1 {
+		if interp.symbols[i].name == name {
+			value   = interp.symbols[i].ast;
+			success = true;
+			break;
+		}
+	}
+
+	return value, success;
 }
 
 evaluate :: ( node: *Ast_Node, env: *Environment, interp: *Interpreter ) {
@@ -35,25 +78,34 @@ evaluate :: ( node: *Ast_Node, env: *Environment, interp: *Interpreter ) {
 
 	reset_interpreter( interp );
 	
-	result: *Ast_Node = null;
-	if node.kind == .Identifier { // or we could notate it and just move on, like if there is a token and a semicolon then don't substitute
-		print( "We need to print the identifier\n" );
-		result = null;
+	if node.kind == .Identifier {
+		ident := cast(*Identifier_Node)node;
+		value, success := lookup_symbol( ident.name, interp );
+		if success {
+			print_ast( value, "Identifier:" );
+		}
+		else {
+			print( "null" ); // i guess it technically isn't an error
+		}
 	}
 	else
 	if node.kind == .Binary_Op {
 		binary_operator := cast(*Binary_Operator_Node)node;
 		if binary_operator.op == .Assign {
+			assert( binary_operator.left.kind == .Identifier );
+			
+			ident 	   := cast(*Identifier_Node)binary_operator.left;
+			expression := binary_operator.right;
+
 			// Eval and Assign
-			eval( binary_operator.right, env, interp ); // should this be called eval_grassmann_products_and_unary_operators
-			build_multielement( interp, env );
+			eval( expression, env, interp ); 		// should this be called eval_grassmann_products_and_unary_operators
+			build_multielement( interp, env );      // should this be called eval_sums?
+			ast  := convert_multielement_to_ast( interp );
+			expr := convert_multielement_to_expression( interp, env );
+			update_symbol_table( ident.name, ast, expr, interp );
 
 			print( "Interp.multielement == %\n", interp.multielement );
 			print( "Number of multielements == %\n", interp.num_terms );
-
-			// so you want to iterate over this and generate an AST that we stick in the table
-
-			// once we have a symbol table we can add stuff in there
 		}
 		else {
 			// Eval the inline expression
@@ -69,7 +121,6 @@ eval :: ( node: *Ast_Node, env: *Environment, interp: *Interpreter ) {
 		k_element_node := cast(*K_Element_Node)node;
 		success = stack_push( *interp.stack, k_element_node._k_element );
 	}
-	// DOESN"T HANDLE LITERALS LIKE NUMBERS BUT THESE SHOULD BE K-ELEMENTS
 	else
 	if node.kind == .Unary_Op {
 		unary_operator := cast(*Unary_Operator_Node)node;
@@ -96,6 +147,99 @@ eval :: ( node: *Ast_Node, env: *Environment, interp: *Interpreter ) {
 		}
 		// intentionally excluding .Sum; handled using 'build_multielement'
 	}
+}
+
+convert_multielement_to_ast :: ( interp: *Interpreter ) -> ( ast: *Ast_Node ) {
+
+	ast: *Ast_Node = null;
+	if interp.num_terms == 1 {
+		ast = new_k_element_node( coefficient = interp.multielement[0].coefficient, interp.multielement[0].basis );
+	}
+	else {
+		root := new_binary_operator_node( .Sum, null, null );
+
+		i: int = 0;
+		current := root;
+		while i < interp.num_terms-2 {
+			defer i += 1;
+			current.left = new_k_element_node( coefficient = interp.multielement[i].coefficient, interp.multielement[i].basis );
+
+			next := new_binary_operator_node( .Sum, null, null );
+			current.right = next;
+			current = next;
+		}
+
+		// the final sum needs handled outside the loop
+		current.left  = new_k_element_node( coefficient = interp.multielement[i].coefficient, interp.multielement[i].basis );
+		current.right = new_k_element_node( coefficient = interp.multielement[i+1].coefficient, interp.multielement[i+1].basis );
+
+		ast = root;
+	}
+
+	// print( "PRINTING AST NODE FOR THE SYMBOL CONSTRUCTED FROM THE MULTIELEMENT\n" );
+	// print_ast( subtree );
+
+	return ast;	
+}
+
+convert_multielement_to_expression :: ( interp: *Interpreter, env: *Environment ) -> ( expression: string ) {
+
+	// Grade 0 elements have an empty string as their 'symbol'
+	// When printing a grade 0 the coefficient will only be reflected
+
+	builder: String_Builder;
+	basis:       s64;
+	coefficient: string;
+
+	i := 0;
+	while i < interp.num_terms-1 {
+		defer i += 1;
+		basis       = interp.multielement[i].basis;
+		coefficient = tprint( "%", interp.multielement[i].coefficient );
+
+		append( *builder, coefficient );
+		append( *builder, env.basis_elements[basis].symbol );
+		append( *builder, " + " );	
+	}
+	basis 		 = interp.multielement[i].basis;
+	coefficient  = tprint( "%", interp.multielement[i].coefficient );
+	append( *builder, coefficient );
+	append( *builder, env.basis_elements[basis].symbol );
+
+	expression: string = builder_to_string( *builder );
+
+	return expression;
+}
+
+update_symbol_table :: ( name: string, ast: *Ast_Node, expression: string, interp: *Interpreter ) {
+
+	// if the symbol table gets 'big' for whatever that means we should make this a hashtable
+	i: int = 0;
+	symbol_index: int = -1;
+	while i < interp.num_symbols {
+		defer i += 1;
+		if interp.symbols[i].name == name {
+			break;
+		}
+	}
+
+	if i < interp.num_symbols {
+		// found an existing symbol, update it
+		// TODO: THIS SHOULD FREE THE OLD AST'S MEMORY!!!
+		interp.symbols[i].ast = ast;
+		interp.symbols[i].expression = expression;
+	}
+	else {
+		// did not find an existing symbol, add it provided we have enough space
+		assert( i < MAX_NUM_SYMBOLS );
+		interp.symbols[i].name       = name;
+		interp.symbols[i].ast  		 = ast;
+		interp.symbols[i].expression = expression;
+
+		interp.num_symbols += 1;
+	}
+
+	return;
 }
 
 #scope_file
@@ -200,8 +344,6 @@ eval_grassmann_product :: ( op: Binary_Op, lvalue: K_Element, rvalue: K_Element,
 	success := stack_push( *interp.stack, result );
 }
 
-
-
 eval_exterior_product :: ( lvalue: K_Element, rvalue: K_Element ) -> ( result: K_Element ) {
 
 	result := K_Element.{ coefficient = 0, basis = 0 };
@@ -260,7 +402,7 @@ build_multielement :: ( interp: *Interpreter, env: *Environment ) {
 
 	num_scalar_terms: int = 0;
 	end: int = 0;
-	for i: 0..63 { // this needs changed to the total number of basis elements, should just be part of the environment or something
+	for i: 0..env.num_basis_elements-1 {
 		if interp.multielement[i].basis >= 0 {
 			if interp.multielement[i].basis == 0 {
 				num_scalar_terms += 1;

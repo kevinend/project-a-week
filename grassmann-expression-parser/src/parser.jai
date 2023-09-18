@@ -34,19 +34,19 @@ parser_set_tokens :: ( parser: *Parser, tokens: [] Token, num_tokens: int ) {
 	return;
 }
 
-parser_generate_ast :: ( parser: *Parser ) {
+parser_generate_ast :: ( parser: *Parser, interp: *Interpreter ) {
 
 	// every valid user input starts with an identifier
 
 	root: *Ast_Node;
-	root = parse_statement( parser );
+	root = parse_statement( parser, interp );
 
 	parser.ast = root;
 }
 
-print_ast :: ( ast: *Ast_Node ) {
+print_ast :: ( ast: *Ast_Node, header: string ) {
 
-	// doesn't handle every node type yet!
+	print( "%\n", header );
 	print_ast_helper :: ( node: *Ast_Node, indent: int = 0 ) {
 
 		for i: 0..indent-1 {
@@ -61,13 +61,24 @@ print_ast :: ( ast: *Ast_Node ) {
 		if node.kind == {
 			case .K_Element; {
 				k_element := cast(*K_Element_Node)node;
-				print( "K-Element(%)\n", k_element.basis ); 
+				print( "K-Element(Coefficient=%, Basis=%)\n", k_element.coefficient, k_element.basis ); 
 			}
 			case .Literal; {
 				print( "Number/Literal\n" );
 			}
 			case .Identifier; { 
-				print( "Identifier\n" ); 
+				ident := cast(*Identifier_Node)node;
+				print( "Identifier(Name=%)\n", ident.name ); 
+			}
+			case .Unary_Op;  { 
+				unary_operator := cast(*Unary_Operator_Node)node;
+				print( "Unary Operator" );
+				if unary_operator.op == {
+					case .Left_Complement;  { print( "(<<)\n" ); }
+					case .Right_Complement; { print( "(>>)\n" ); }
+					case .Negation;         { print( "(-) \n" ); }
+				}
+				print_ast_helper( unary_operator.operand, indent + 2 );
 			}
 			case .Binary_Op; { 
 				binary_operator := cast(*Binary_Operator_Node)node;
@@ -82,16 +93,7 @@ print_ast :: ( ast: *Ast_Node ) {
 				print_ast_helper( binary_operator.left,  indent + 2 );
 				print_ast_helper( binary_operator.right, indent + 2 );
 			}
-			case .Unary_Op;  { 
-				unary_operator := cast(*Unary_Operator_Node)node;
-				print( "Unary Operator" );
-				if unary_operator.op == {
-					case .Left_Complement;  { print( "(<<)\n" ); }
-					case .Right_Complement; { print( "(>>)\n" ); }
-					case .Negation;         { print( "(-) \n" ); }
-				}
-				print_ast_helper( unary_operator.operand, indent + 2 );
-			}
+			
 			case; { print( "Unrecognized\n" ); }
 		}
 	}
@@ -110,7 +112,7 @@ consume_token :: inline ( parser: *Parser ) {
 	return;
 }
 
-parse_statement :: ( parser: *Parser ) -> ( node: *Ast_Node ) {
+parse_statement :: ( parser: *Parser, interp: *Interpreter ) -> ( node: *Ast_Node ) {
 
 	t0: *Token;
 	t1: *Token;
@@ -128,7 +130,7 @@ parse_statement :: ( parser: *Parser ) -> ( node: *Ast_Node ) {
 			consume_token( parser );
 
 			left  := new_identifier_node( t0.identifier );
-			right := parse_expression( parser );
+			right := parse_expression( parser, interp );
 
 			t2 = peek_next_token( parser );
 			if t2.type == .Semicolon {
@@ -142,9 +144,19 @@ parse_statement :: ( parser: *Parser ) -> ( node: *Ast_Node ) {
 		}
 		else
 		if t1.type == .Semicolon {
-			
+			ast, success := lookup_symbol( t0.identifier, interp );
+			if !success {
+				print( "Unresolved identifier %\n", t0.identifier );
+				node = null;
+			}
+			else {
+				node = ast;
+			}
+
+			/* TODO: Remove if this stuff actually works
 			ident := new_identifier_node( t0.identifier );
 			node = ident;
+			*/
 		}
 		else {
 			print( "Parse error, expected an equals sign or semicolon following identifier\n" );
@@ -157,10 +169,10 @@ parse_statement :: ( parser: *Parser ) -> ( node: *Ast_Node ) {
 	return node;
 }
 
-parse_expression :: ( parser: *Parser ) -> ( node: *Ast_Node ) {
+parse_expression :: ( parser: *Parser, interp: *Interpreter ) -> ( node: *Ast_Node ) {
 
 	term: *Ast_Node = null;
-	term = parse_exterior_term( parser );
+	term = parse_exterior_term( parser, interp );
 	
 	while true {	
 			
@@ -178,7 +190,7 @@ parse_expression :: ( parser: *Parser ) -> ( node: *Ast_Node ) {
 			consume_token( parser );
 
 			next_term: *Ast_Node;
-			next_term = parse_exterior_term( parser );
+			next_term = parse_exterior_term( parser, interp );
 
 			// Since sums and differences can't easily be resolved in Grassmann Algebra
 			// and often times lead to multi-vectors I just want to deal strictly with sums.
@@ -212,10 +224,10 @@ parse_expression :: ( parser: *Parser ) -> ( node: *Ast_Node ) {
 	return term;
 }
 
-parse_exterior_term :: ( parser: *Parser ) -> ( node: *Ast_Node ) {
+parse_exterior_term :: ( parser: *Parser, interp: *Interpreter ) -> ( node: *Ast_Node ) {
 
 	factor: *Ast_Node = null;
-	factor = parse_exterior_factor( parser );
+	factor = parse_exterior_factor( parser, interp );
 
 	while true {
 		t0 := peek_next_token( parser );
@@ -233,7 +245,7 @@ parse_exterior_term :: ( parser: *Parser ) -> ( node: *Ast_Node ) {
 			}
 
 			next_factor: *Ast_Node;
-			next_factor = parse_exterior_factor( parser );
+			next_factor = parse_exterior_factor( parser, interp );
 
 			node := new_binary_operator_node( op, factor, next_factor );
 
@@ -247,7 +259,7 @@ parse_exterior_term :: ( parser: *Parser ) -> ( node: *Ast_Node ) {
 	return factor;
 }
 
-parse_exterior_factor :: ( parser: *Parser ) -> ( node: *Ast_Node ) {
+parse_exterior_factor :: ( parser: *Parser, interp: *Interpreter ) -> ( node: *Ast_Node ) {
 
 	node: *Ast_Node = null;
 
@@ -287,28 +299,46 @@ parse_exterior_factor :: ( parser: *Parser ) -> ( node: *Ast_Node ) {
 	else
 	if t0.type == .Identifier {
 		consume_token( parser );
+		ast, success := lookup_symbol( t0.identifier, interp );
+		if !success {
+			print( "Unresolved identifier %\n", t0.identifier );
+		}
+		node = ast;
+
+		/*
 		ident := new_identifier_node( t0.identifier );
 		node  = ident;
+		*/
 	}
 	else
 	if t0.type == .Number {
 		consume_token( parser );
-		literal := new_literal_node( t0.number );
-		node = literal;
+		scalar := new_k_element_node( coefficient = t0.number, basis = 0 );
+		node = scalar;
 
 		t1 = peek_next_token( parser );
 		if t1.type == .Identifier {
 			consume_token( parser );
-			identifier := new_identifier_node( t1.identifier );
-			binary_op  := new_binary_operator_node( .Exterior_Product, literal, identifier );
+			ast, success := lookup_symbol( t1.identifier, interp );
+			if !success {
+				print( "Unresolved identifier %\n", t1.identifier );
+			}
+			binary_op := new_binary_operator_node( .Exterior_Product, scalar, ast );
 
-			node = binary_op;	
+			node = binary_op;
+
+			/*
+			identifier := new_identifier_node( t1.identifier );
+			binary_op  := new_binary_operator_node( .Exterior_Product, scalar, identifier );
+
+			node = binary_op;
+			*/
 		}
 		else
 		if t1.type == .Basis_Element {
 			consume_token( parser );
 			k_element := new_k_element_node( coefficient = 1, basis = t1.basis );
-			binary_op := new_binary_operator_node( .Exterior_Product, literal, k_element );
+			binary_op := new_binary_operator_node( .Exterior_Product, scalar, k_element );
 
 			node = binary_op;			
 		}
@@ -316,7 +346,7 @@ parse_exterior_factor :: ( parser: *Parser ) -> ( node: *Ast_Node ) {
 	else
 	if t0.type == .Open_Paren {
 		consume_token( parser );
-		node = parse_expression( parser );
+		node = parse_expression( parser, interp );
 		t0 = peek_next_token( parser );
 		if t0.type  == .Close_Paren {
 			consume_token( parser );
