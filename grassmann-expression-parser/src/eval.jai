@@ -1,5 +1,9 @@
 #scope_export
 
+// Not caching the AST or the string expression representation of a multielement
+// Both are generated in temporary storage per loop when resolved which is definitely computationally wasteful.
+// Don't think it is worth dealing with caching the data structures right now.
+
 Symbol :: struct {
 	name:  string;
 	value: Multi_Element;
@@ -30,12 +34,12 @@ pointer_offset :: inline ( base: *$T, offset: s64 ) -> *void {
 	return cast(*void)(cast(*u8)base + offset);
 }
 
-print_symbol_table :: ( interp: *Interpreter, env: *Environment ) {
+print_symbol_table :: ( symbol_table: *Symbol_Table, basis_elements: [] Basis_Element ) {
 
 	print( "Symbol Table Entries:\n" );
-	for i: 0..interp.num_symbols-1 {
-		expression := multielement_to_expression( interp.symbols[i].value, env );
-		print( "% = %\n", interp.symbols[i].name, expression );
+	for i: 0..symbol_table.num_symbols-1 {
+		expression := multielement_to_expression( symbol_table.symbols[i].value, basis_elements );
+		print( "% = %\n", symbol_table.symbols[i].name, expression );
 	}
 	print( "\n" );
 
@@ -79,48 +83,31 @@ lookup_symbol :: ( name: string, symbol_table: *Symbol_Table ) -> ( value: Multi
 
 evaluate :: ( node: *Ast_Node, env: *Environment, interp: *Interpreter ) {
 
-	// This application accepts the following forms of expressions.
+	// Possible root nodes:
 	// (1) Ident = Expression;
-	// (2) Ident;
-	// (3) Expression;
-	//
-	// In case (1) we eval the expression and store the value (simplified ast) in a symbol table
-	// In case (2) we traverse the ast for the identifier and print out the resulting expression
-	// In case (3) we traverse the ast, simplify it as much as possible and print the result
-
+	// (2) Expression;
 
 	reset_interpreter( interp );
-	
-	if node.kind == .Identifier {
-		// parse error if this isn't followed by a semicolon so don't worry about that piece now
-		ident := cast(*Identifier_Node)node;
-		value, success := lookup_symbol( ident.name, *interp.symbol_table );
-		if success {
-			expression := multielement_to_expression( value, env );
-			print( "%\n", expression );
-		}	
-		else {
-			print( "null" ); // i guess it technically isn't an error
-		}
-	}
-	else
-	if node.kind == .Binary_Op {
-		binary_operator := cast(*Binary_Operator_Node)node;
-		if binary_operator.op == .Assign {
-			assert( binary_operator.left.kind == .Identifier );
-			
-			ident 	   := cast(*Identifier_Node)binary_operator.left;
-			expression := binary_operator.right;
 
-			// Eval and Assign
-			eval( expression, env, interp ); 						// should this be called eval_grassmann_products_and_unary_operators
-			multielement := build_multielement( interp, env );      // should this be called eval_sums?
-			update_symbol( ident.name, multielement, *interp.symbol_table );
-		}
-		else {
-			// Eval the inline expression
-			// The parser is not set up for this yet!
-		}
+	// assume it is an assignment statement; if not handle all other expressions
+	binary_operator := cast(*Binary_Operator_Node)node;
+
+	if node.kind == .Binary_Op && binary_operator.op == .Assign {
+		assert( binary_operator.left.kind == .Identifier );
+
+		ident 	   := cast(*Identifier_Node)binary_operator.left;
+		expression := binary_operator.right;
+		
+		// eval and assign
+		eval( expression, env, interp );
+		multielement := build_multielement( interp, env );
+		update_symbol( ident.name, multielement, *interp.symbol_table );
+	}
+	else {
+		// evaluate every other type of expression
+		eval( node, env, interp );
+		multielement := build_multielement( interp, env );
+		print( "Result: %\n", multielement_to_expression( multielement, env.basis_elements ) );
 	}
 }
 
@@ -192,7 +179,7 @@ multielement_to_ast :: ( multielement: Multi_Element ) -> ( ast: *Ast_Node ) {
 	return ast;	
 }
 
-multielement_to_expression :: ( multielement: Multi_Element, env: *Environment ) -> ( expression: string ) {
+multielement_to_expression :: ( multielement: Multi_Element, basis_elements: [] Basis_Element ) -> ( expression: string ) {
 	
 	// DOES STRING BUILDER USE TEMPORARY STORAGE???
 
@@ -205,19 +192,20 @@ multielement_to_expression :: ( multielement: Multi_Element, env: *Environment )
 
 	i := 0;
 	while i < multielement.count-1 {
-		defer i += 1;
 		basis       = multielement[i].basis;
 		coefficient = tprint( "%", multielement[i].coefficient );
 
 		append( *builder, coefficient );
-		append( *builder, env.basis_elements[basis].symbol );
-		append( *builder, " + " );	
+		append( *builder, basis_elements[basis].symbol );
+		append( *builder, " + " );
+
+		i += 1;
 	}
 
 	basis 		 = multielement[i].basis;
 	coefficient  = tprint( "%", multielement[i].coefficient );
 	append( *builder, coefficient );
-	append( *builder, env.basis_elements[basis].symbol );
+	append( *builder, basis_elements[basis].symbol );
 
 	expression: string = builder_to_string( *builder );
 

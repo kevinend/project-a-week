@@ -30,7 +30,7 @@ lexer_set_input :: ( lexer: *Lexer, user_input: string ) {
 	return;
 }
 
-lexer_generate_tokens :: ( lexer: *Lexer, env: *Environment ) {
+lexer_generate_tokens :: ( lexer: *Lexer, one_element_symbols: [] string ) {
 
 	clear_tokens :: ( lexer: *Lexer ) {
 		// Prior line's tokens get overwritten on every new input line.
@@ -59,7 +59,7 @@ lexer_generate_tokens :: ( lexer: *Lexer, env: *Environment ) {
 		}
 
 		if begins_identifier( c0 ) {
-			token = compose_identifier_keyword_or_basis_symbol_token( lexer, env.one_element_symbols );
+			token = compose_identifier_keyword_or_basis_symbol_token( lexer, one_element_symbols );
 			add_token( lexer, token );
 			continue;	
 		}

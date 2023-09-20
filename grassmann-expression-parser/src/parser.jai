@@ -1,7 +1,5 @@
 #scope_export
 
-// convert interp to just the symbol table
-
 /*
 	BNF for Grassmann expressions:
 		statement  		::= <identifier> "=" <expression> ";"
@@ -12,8 +10,9 @@
 		exterior-factor ::= ["-"].. ["<<"].. [">>"].. ( <basis-one-element> | <number> | <identifier> | "(" <expression> ")" )		
 */
 
-PARSER_TEMP_BUFFER_LENGTH :: 8;
 Parser :: struct {
+
+	PARSER_TEMP_BUFFER_LENGTH :: 8;
 
 	tokens: 	  [] Token;
 	token_cursor: int;
@@ -101,6 +100,7 @@ print_ast :: ( ast: *Ast_Node, header: string ) {
 	}
 
 	print_ast_helper( ast );
+	print( "\n" );
 }
 
 #scope_file

@@ -1,5 +1,5 @@
 MAIN: 
---Use Temporary allocator, free memory on every iteration of the loop
+xx--Use Temporary allocator, free memory on every iteration of the loop
 --Allow input to come from a file instead of stdin
 --Allow free-form expressions, so just e1 ^ e1 should return the result to the console
 
@@ -10,9 +10,15 @@ xxConvert number to K-Element with basis = 0
 --Error messages
 
 PARSER:
+--Maybe need but it would be nice just to print the value, i guess we don't want to sub if it is just a raw token?
 --Handle keywords, kind of skipping over them for now
 --Revisit the use of t0,t1,t2; are they too simplistic? is the code hard to follow?
 --Error messages
+
+L1 = e1;
+L1; --> should print the value
+or some expression should print the value
+other than that it just needs assigned
 
 EVAL:
 --Interior product, use regressive with comp of second arg
