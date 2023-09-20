@@ -93,11 +93,7 @@ clone_node :: ( node: *Ast_Node ) -> ( cloned_node: *Ast_Node ) {
 		left  := clone_node( binary_operator.left  );
 		right := clone_node( binary_operator.right );
 
-		cloned_node = new_binary_operator_node(
-			 binary_operator.op
-			,left
-			,right
-		);
+		cloned_node = new_binary_operator_node( binary_operator.op, left, right );
 	}
 	else {
 		print( "Unrecognized node kind found when cloning nodes\n" );
@@ -106,9 +102,11 @@ clone_node :: ( node: *Ast_Node ) -> ( cloned_node: *Ast_Node ) {
 	return cloned_node;	
 }
 
-new_k_element_node :: ( coefficient: int, basis: s64 ) -> ( node: *K_Element_Node ){
+new_k_element_node :: ( coefficient: int, basis: s64 ) -> ( node: *K_Element_Node ) {
 
-	node := New(K_Element_Node);
+	// node := New(K_Element_Node);
+
+	node: *K_Element_Node = talloc( size_of(K_Element_Node) );
 	assert( node != null );
 
 	node.kind  		 = Node_Kind.K_Element;
@@ -120,7 +118,9 @@ new_k_element_node :: ( coefficient: int, basis: s64 ) -> ( node: *K_Element_Nod
 
 new_literal_node :: ( value: int ) -> ( node: *Literal_Node ) {
 
-	node := New(Literal_Node);
+	// node := New(Literal_Node);
+
+	node: *Literal_Node = talloc( size_of(Literal_Node) );
 	assert( node != null );
 	
 	node.kind = Node_Kind.Literal;
@@ -131,7 +131,9 @@ new_literal_node :: ( value: int ) -> ( node: *Literal_Node ) {
 
 new_identifier_node :: ( name: string ) -> ( node: *Identifier_Node ) {
 
-	node := New(Identifier_Node);
+	// node := New(Identifier_Node);
+
+	node: *Identifier_Node = talloc( size_of(Identifier_Node) );
 	assert( node != null );
 
 	node.kind = .Identifier;
@@ -142,7 +144,9 @@ new_identifier_node :: ( name: string ) -> ( node: *Identifier_Node ) {
 
 new_unary_operator_node :: ( op: Unary_Op, operand: *Ast_Node ) -> ( node: *Unary_Operator_Node ) {
 
-	node := New(Unary_Operator_Node);
+	// node := New(Unary_Operator_Node);
+
+	node: *Unary_Operator_Node = talloc( size_of(Unary_Operator_Node) );
 	assert( node != null );
 
 	node.kind 	  = .Unary_Op;
@@ -154,7 +158,9 @@ new_unary_operator_node :: ( op: Unary_Op, operand: *Ast_Node ) -> ( node: *Unar
 
 new_binary_operator_node :: ( op: Binary_Op, left: *Ast_Node, right: *Ast_Node ) -> ( node: *Binary_Operator_Node ) {
 
-	node := New(Binary_Operator_Node);
+	// node := New(Binary_Operator_Node);
+	
+	node: *Binary_Operator_Node = talloc( size_of(Binary_Operator_Node) );
 	assert( node != null );
 
 	node.kind  = .Binary_Op;

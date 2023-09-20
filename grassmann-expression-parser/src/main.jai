@@ -9,6 +9,9 @@ main :: () {
 	parser: Parser;
 	interp: Interpreter;
 
+	print( "K_Element; Size of == %\n", size_of(K_Element_Node) * 64 * 8);
+	print( "Binary_Op; Size of == %\n", size_of(Binary_Operator_Node) * 63 * 8 );
+
 	environment_set_dimension_and_n_element( *env, 4 );
 	environment_set_one_element_symbols( *env, string.["e1","e2","e3","e4"] );
 	environment_generate_basis_elements( *env );
@@ -26,7 +29,7 @@ main :: () {
 		print_tokens( *lexer, "Tokens:" );
 
 		parser_set_tokens( *parser, lexer.tokens, lexer.num_tokens );
-		parser_generate_ast( *parser, *interp );
+		parser_generate_ast( *parser, *interp.symbol_table );
 
 //		print( "\nAST:\n" );
 //		print_ast( parser.ast, "AST:" );
@@ -38,7 +41,9 @@ main :: () {
 
 		evaluate( ast, *env, *interp );
 
-		print_symbol_table( *interp );
+		print_symbol_table( *interp, *env );
+
+		reset_temporary_storage();
 	}
 
 	return;

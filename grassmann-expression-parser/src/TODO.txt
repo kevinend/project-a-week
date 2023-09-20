@@ -16,6 +16,7 @@ PARSER:
 
 EVAL:
 --Interior product, use regressive with comp of second arg
+--Left and Right additive identity (0 + e1) does not resolve correctly
 
 ENVIRONMENT:
 --Should we clear all symbols on an environment change? Yes we have to

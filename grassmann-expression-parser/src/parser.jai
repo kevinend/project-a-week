@@ -1,5 +1,7 @@
 #scope_export
 
+// convert interp to just the symbol table
+
 /*
 	BNF for Grassmann expressions:
 		statement  		::= <identifier> "=" <expression> ";"
@@ -34,12 +36,12 @@ parser_set_tokens :: ( parser: *Parser, tokens: [] Token, num_tokens: int ) {
 	return;
 }
 
-parser_generate_ast :: ( parser: *Parser, interp: *Interpreter ) {
+parser_generate_ast :: ( parser: *Parser, symbol_table: *Symbol_Table ) {
 
 	// every valid user input starts with an identifier
 
 	root: *Ast_Node;
-	root = parse_statement( parser, interp );
+	root = parse_statement( parser, symbol_table );
 
 	parser.ast = root;
 }
@@ -112,7 +114,7 @@ consume_token :: inline ( parser: *Parser ) {
 	return;
 }
 
-parse_statement :: ( parser: *Parser, interp: *Interpreter ) -> ( node: *Ast_Node ) {
+parse_statement :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( node: *Ast_Node ) {
 
 	t0: *Token;
 	t1: *Token;
@@ -130,7 +132,7 @@ parse_statement :: ( parser: *Parser, interp: *Interpreter ) -> ( node: *Ast_Nod
 			consume_token( parser );
 
 			left  := new_identifier_node( t0.identifier );
-			right := parse_expression( parser, interp );
+			right := parse_expression( parser, symbol_table );
 
 			t2 = peek_next_token( parser );
 			if t2.type == .Semicolon {
@@ -144,19 +146,14 @@ parse_statement :: ( parser: *Parser, interp: *Interpreter ) -> ( node: *Ast_Nod
 		}
 		else
 		if t1.type == .Semicolon {
-			ast, success := lookup_symbol( t0.identifier, interp );
+			value, success := lookup_symbol( t0.identifier, symbol_table );
 			if !success {
 				print( "Unresolved identifier %\n", t0.identifier );
 				node = null;
 			}
 			else {
-				node = ast;
+				node = multielement_to_ast( value );
 			}
-
-			/* TODO: Remove if this stuff actually works
-			ident := new_identifier_node( t0.identifier );
-			node = ident;
-			*/
 		}
 		else {
 			print( "Parse error, expected an equals sign or semicolon following identifier\n" );
@@ -169,10 +166,10 @@ parse_statement :: ( parser: *Parser, interp: *Interpreter ) -> ( node: *Ast_Nod
 	return node;
 }
 
-parse_expression :: ( parser: *Parser, interp: *Interpreter ) -> ( node: *Ast_Node ) {
+parse_expression :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( node: *Ast_Node ) {
 
 	term: *Ast_Node = null;
-	term = parse_exterior_term( parser, interp );
+	term = parse_exterior_term( parser, symbol_table );
 	
 	while true {	
 			
@@ -190,15 +187,15 @@ parse_expression :: ( parser: *Parser, interp: *Interpreter ) -> ( node: *Ast_No
 			consume_token( parser );
 
 			next_term: *Ast_Node;
-			next_term = parse_exterior_term( parser, interp );
+			next_term = parse_exterior_term( parser, symbol_table );
 
 			// Since sums and differences can't easily be resolved in Grassmann Algebra
-			// and often times lead to multi-vectors I just want to deal strictly with sums.
+			// and often times lead to multi-vectors/multi-elements I just want to deal strictly with sums.
 			// Especially a pain in the ass when you have the same k-element at different levels a
 			// of the tree and you want to collect terms. 
 			//
 			// Converting differences to sums doesn't solve the 'collecting like terms' problem but
-			// it is one set of if statements I won't have to worry about later.
+			// it is one less set of if statements I won't have to worry about later.
 			//      + 					+
 			//   e1  -         ==>   e1    +
 			//     e2 +                  e1 +
@@ -224,10 +221,10 @@ parse_expression :: ( parser: *Parser, interp: *Interpreter ) -> ( node: *Ast_No
 	return term;
 }
 
-parse_exterior_term :: ( parser: *Parser, interp: *Interpreter ) -> ( node: *Ast_Node ) {
+parse_exterior_term :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( node: *Ast_Node ) {
 
 	factor: *Ast_Node = null;
-	factor = parse_exterior_factor( parser, interp );
+	factor = parse_exterior_factor( parser, symbol_table );
 
 	while true {
 		t0 := peek_next_token( parser );
@@ -245,7 +242,7 @@ parse_exterior_term :: ( parser: *Parser, interp: *Interpreter ) -> ( node: *Ast
 			}
 
 			next_factor: *Ast_Node;
-			next_factor = parse_exterior_factor( parser, interp );
+			next_factor = parse_exterior_factor( parser, symbol_table );
 
 			node := new_binary_operator_node( op, factor, next_factor );
 
@@ -259,7 +256,7 @@ parse_exterior_term :: ( parser: *Parser, interp: *Interpreter ) -> ( node: *Ast
 	return factor;
 }
 
-parse_exterior_factor :: ( parser: *Parser, interp: *Interpreter ) -> ( node: *Ast_Node ) {
+parse_exterior_factor :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( node: *Ast_Node ) {
 
 	node: *Ast_Node = null;
 
@@ -299,16 +296,11 @@ parse_exterior_factor :: ( parser: *Parser, interp: *Interpreter ) -> ( node: *A
 	else
 	if t0.type == .Identifier {
 		consume_token( parser );
-		ast, success := lookup_symbol( t0.identifier, interp );
+		value, success := lookup_symbol( t0.identifier, symbol_table );
 		if !success {
 			print( "Unresolved identifier %\n", t0.identifier );
 		}
-		node = ast;
-
-		/*
-		ident := new_identifier_node( t0.identifier );
-		node  = ident;
-		*/
+		node = multielement_to_ast( value );
 	}
 	else
 	if t0.type == .Number {
@@ -319,20 +311,13 @@ parse_exterior_factor :: ( parser: *Parser, interp: *Interpreter ) -> ( node: *A
 		t1 = peek_next_token( parser );
 		if t1.type == .Identifier {
 			consume_token( parser );
-			ast, success := lookup_symbol( t1.identifier, interp );
+			value, success := lookup_symbol( t1.identifier, symbol_table );
 			if !success {
 				print( "Unresolved identifier %\n", t1.identifier );
 			}
-			binary_op := new_binary_operator_node( .Exterior_Product, scalar, ast );
+			binary_op := new_binary_operator_node( .Exterior_Product, scalar, multielement_to_ast( value ) );
 
 			node = binary_op;
-
-			/*
-			identifier := new_identifier_node( t1.identifier );
-			binary_op  := new_binary_operator_node( .Exterior_Product, scalar, identifier );
-
-			node = binary_op;
-			*/
 		}
 		else
 		if t1.type == .Basis_Element {
@@ -346,7 +331,7 @@ parse_exterior_factor :: ( parser: *Parser, interp: *Interpreter ) -> ( node: *A
 	else
 	if t0.type == .Open_Paren {
 		consume_token( parser );
-		node = parse_expression( parser, interp );
+		node = parse_expression( parser, symbol_table );
 		t0 = peek_next_token( parser );
 		if t0.type  == .Close_Paren {
 			consume_token( parser );

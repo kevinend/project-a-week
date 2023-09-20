@@ -31,6 +31,8 @@ K_Element :: struct {
 	basis:         Basis_Element_Index;
 }
 
+Multi_Element :: [] K_Element;
+
 Environment :: struct {
 	dimension: int;
 	one_element_symbols: [] string;

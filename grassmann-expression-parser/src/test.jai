@@ -488,7 +488,89 @@ generate_basis_symbol :: ( element: int, grade: int, n: int, one_element_symbols
 
 #load "stack.jai";
 
+// we could store the multielement and then when we need it convert it to an AST at that point
+// sounds a little wasteful because everytime you use that element it needs converted
+// however, it would allow us to call 'build expression' or 'build ast' to inject in there
+// but you would allocate L1 = L2;
+// then you would use L2 I'd think you wouldn't use it all over the place
+// and it is part of temporary memory, you could cache it if you wanted to 
+
+// so that fixes the 'symbol-name' problem for now, just give a fixed permanent buffer
+// then make a fixed buffer for the 
+
 main :: () {
+
+{
+	MAX_NUM_SYMBOLS 	   :: 8;
+	SYMBOL_NAME_MAX_SIZE   :: 8;
+	MAX_NUM_BASIS_ELEMENTS :: 64; 
+
+	K_Element :: struct {
+		coefficient: int;
+		basis: s64;
+	}
+
+	Multi_Element :: #type [] K_Element;
+	
+	print( "The total size == %\n", MAX_NUM_SYMBOLS * SYMBOL_NAME_MAX_SIZE );
+
+	Symbol :: struct {
+		name:  string;
+		value: Multi_Element;
+	}
+
+	names:  [MAX_NUM_SYMBOLS * SYMBOL_NAME_MAX_SIZE]   u8;
+	values: [MAX_NUM_SYMBOLS * MAX_NUM_BASIS_ELEMENTS] K_Element;
+
+	print( "Size of values == %\n", MAX_NUM_SYMBOLS * MAX_NUM_BASIS_ELEMENTS * size_of(K_Element) );
+
+	num_symbols: int = 0;
+
+	symbols: [MAX_NUM_SYMBOLS] Symbol;
+	for i: 0..MAX_NUM_SYMBOLS-1 {
+		symbols[i].name.data  = *names[0]  + (SYMBOL_NAME_MAX_SIZE * i);
+		symbols[i].value.data = *values[0] + (MAX_NUM_BASIS_ELEMENTS * size_of(K_Element) * i);
+	}
+
+	// then when you lookup a symbol you traverse the names and look up the name
+	// traverse the symbol table and lookup the name and then do the check which is in the same memory
+	// do you collapse the buffer or do we just put it in the symbol? I guess we don't know at the time which symbol we want to update yet
+	// hmm...
+
+	for i: 0..MAX_NUM_SYMBOLS-1 {
+		print( "Symbol pointer == %\n", symbols[i].name.data );
+	}
+
+	strings := string.["L1","origin","center", "centroid"];
+	for i: 0..strings.count-1 {
+		memcpy( symbols[i].name.data, strings[i].data, strings[i].count );
+		symbols[i].name.count = strings[i].count;
+		num_symbols += 1;
+	}
+
+	print( "Number of symbols == %\n", num_symbols );
+	for i: 0..num_symbols-1 {
+		print( "Symbol name == %\n", symbols[i].name );
+	}
+}
+
+{
+	x: *int = talloc( 5 * size_of(int) ); // 8 bytes * 5 is 40 total bytes
+	print( "Context Temp storage usage %\n", context.temporary_storage.total_bytes_occupied	);
+	for i: 0..4 {
+		x[i] = i*10;
+	}
+
+	for i: 0..4 {
+		print( "(%,%)\n", i, x[i] );
+	}
+
+	reset_temporary_storage();
+	print( "Context Temp storage usage %\n", context.temporary_storage.total_bytes_occupied	);
+
+	y: *int = talloc( size_of(int) );
+	print( "Context Temp storage usage %\n", context.temporary_storage.total_bytes_occupied	);
+}
 
 	x := tprint( "Hello" );
 	y := tprint( "World" );

@@ -1,33 +1,41 @@
 #scope_export
 
 Symbol :: struct {
-	name:   	 string;
-	ast:   		*Ast_Node;
-	expression:  string;
+	name:  string;
+	value: Multi_Element;
 }
 
-MAX_NUM_SYMBOLS :: 8;
+Symbol_Table :: struct {
 
-Interpreter :: struct {
-	stack: 		  Stack(K_Element);  				   // used to execute grassmann products
-	multielement: [MAX_NUM_BASIS_ELEMENTS] K_Element;  // final output from expression evaluation
-	num_terms:    int;           				   	   // number of terms in the multielement
-
+	MAX_NUM_SYMBOLS 	 :: 8;
+	SYMBOL_NAME_MAX_SIZE :: 8;
+	
 	symbols: [MAX_NUM_SYMBOLS] Symbol;
 	num_symbols: int;
+
+	names:  [MAX_NUM_SYMBOLS * SYMBOL_NAME_MAX_SIZE]   u8;
+	values: [MAX_NUM_SYMBOLS * MAX_NUM_BASIS_ELEMENTS] K_Element;
 }
 
-print_symbol_table :: ( interp: *Interpreter ) {
+Interpreter :: struct {
+	is_initialized: 			bool;
+	stack: 		  	   			Stack(K_Element);  				     // used to execute grassmann products
+	multielement_builder: 		[MAX_NUM_BASIS_ELEMENTS] K_Element;  // temporary reusable buffer for generating multielements
+	num_terms_in_multielement:  int;           				   	     // number of terms in the multielement
 
-	print( "Symbols belonging to symbol table:\n" );
-	for i: 0..interp.num_symbols-1 {
-		print( "%\n", interp.symbols[i].name );	
-	}
-	print( "\n" );
+	using symbol_table: Symbol_Table;
+}
 
-	print( "Name = Value\n" );
+pointer_offset :: inline ( base: *$T, offset: s64 ) -> *void {
+	return cast(*void)(cast(*u8)base + offset);
+}
+
+print_symbol_table :: ( interp: *Interpreter, env: *Environment ) {
+
+	print( "Symbol Table Entries:\n" );
 	for i: 0..interp.num_symbols-1 {
-		print( "% = %\n", interp.symbols[i].name, interp.symbols[i].expression );
+		expression := multielement_to_expression( interp.symbols[i].value, env );
+		print( "% = %\n", interp.symbols[i].name, expression );
 	}
 	print( "\n" );
 
@@ -36,26 +44,31 @@ print_symbol_table :: ( interp: *Interpreter ) {
 
 reset_interpreter :: ( interp: *Interpreter ) {
 
-	if interp.stack.entries.count == 0 { // unitialized
+	if !interp.is_initialized {
 		interp.stack = stack_init( 50, K_Element ); // TODO: make this reasonable
+		for i: 0..Symbol_Table.MAX_NUM_SYMBOLS-1 {
+			interp.symbols[i].name.data  = pointer_offset( base = *interp.symbol_table.names[0],  offset = (Symbol_Table.SYMBOL_NAME_MAX_SIZE * i) );
+			interp.symbols[i].value.data = pointer_offset( base = *interp.symbol_table.values[0], offset = (MAX_NUM_BASIS_ELEMENTS * size_of(K_Element) * i));
+		}
+		interp.is_initialized = true;
 	}
 
 	// should be memset!
-	for i: 0..interp.multielement.count-1 {
-		interp.multielement[i].coefficient =  0;
-		interp.multielement[i].basis 	   = -1;
+	for i: 0..MAX_NUM_BASIS_ELEMENTS-1 {
+		interp.multielement_builder[i].coefficient =  0;
+		interp.multielement_builder[i].basis 	   = -1;
 	}
 
-	interp.num_terms = 0;
+	interp.num_terms_in_multielement = 0;
 }
 
-lookup_symbol :: ( name: string, interp: *Interpreter ) -> ( value: *Ast_Node, success: bool ) {
+lookup_symbol :: ( name: string, symbol_table: *Symbol_Table ) -> ( value: Multi_Element, success: bool ) {
 	
-	value: *Ast_Node = null;
+	value: Multi_Element;
 	success: bool = false;
-	for i: 0..interp.num_symbols-1 {
-		if interp.symbols[i].name == name {
-			value   = interp.symbols[i].ast;
+	for i: 0..symbol_table.num_symbols-1 {
+		if symbol_table.symbols[i].name == name {
+			value   = symbol_table.symbols[i].value;
 			success = true;
 			break;
 		}
@@ -79,11 +92,13 @@ evaluate :: ( node: *Ast_Node, env: *Environment, interp: *Interpreter ) {
 	reset_interpreter( interp );
 	
 	if node.kind == .Identifier {
+		// parse error if this isn't followed by a semicolon so don't worry about that piece now
 		ident := cast(*Identifier_Node)node;
-		value, success := lookup_symbol( ident.name, interp );
+		value, success := lookup_symbol( ident.name, *interp.symbol_table );
 		if success {
-			print_ast( value, "Identifier:" );
-		}
+			expression := multielement_to_expression( value, env );
+			print( "%\n", expression );
+		}	
 		else {
 			print( "null" ); // i guess it technically isn't an error
 		}
@@ -98,14 +113,9 @@ evaluate :: ( node: *Ast_Node, env: *Environment, interp: *Interpreter ) {
 			expression := binary_operator.right;
 
 			// Eval and Assign
-			eval( expression, env, interp ); 		// should this be called eval_grassmann_products_and_unary_operators
-			build_multielement( interp, env );      // should this be called eval_sums?
-			ast  := convert_multielement_to_ast( interp );
-			expr := convert_multielement_to_expression( interp, env );
-			update_symbol_table( ident.name, ast, expr, interp );
-
-			print( "Interp.multielement == %\n", interp.multielement );
-			print( "Number of multielements == %\n", interp.num_terms );
+			eval( expression, env, interp ); 						// should this be called eval_grassmann_products_and_unary_operators
+			multielement := build_multielement( interp, env );      // should this be called eval_sums?
+			update_symbol( ident.name, multielement, *interp.symbol_table );
 		}
 		else {
 			// Eval the inline expression
@@ -149,20 +159,23 @@ eval :: ( node: *Ast_Node, env: *Environment, interp: *Interpreter ) {
 	}
 }
 
-convert_multielement_to_ast :: ( interp: *Interpreter ) -> ( ast: *Ast_Node ) {
+multielement_to_ast :: ( multielement: Multi_Element ) -> ( ast: *Ast_Node ) {
+
+	// The 'new_...node' procedures allocate in temporary storage
+	// Will get wiped every execution of the main loop
 
 	ast: *Ast_Node = null;
-	if interp.num_terms == 1 {
-		ast = new_k_element_node( coefficient = interp.multielement[0].coefficient, interp.multielement[0].basis );
+	if multielement.count == 1 {
+		ast = new_k_element_node( coefficient = multielement[0].coefficient, multielement[0].basis );
 	}
 	else {
 		root := new_binary_operator_node( .Sum, null, null );
 
 		i: int = 0;
 		current := root;
-		while i < interp.num_terms-2 {
+		while i < multielement.count-2 {
 			defer i += 1;
-			current.left = new_k_element_node( coefficient = interp.multielement[i].coefficient, interp.multielement[i].basis );
+			current.left = new_k_element_node( coefficient = multielement[i].coefficient, multielement[i].basis );
 
 			next := new_binary_operator_node( .Sum, null, null );
 			current.right = next;
@@ -170,19 +183,18 @@ convert_multielement_to_ast :: ( interp: *Interpreter ) -> ( ast: *Ast_Node ) {
 		}
 
 		// the final sum needs handled outside the loop
-		current.left  = new_k_element_node( coefficient = interp.multielement[i].coefficient, interp.multielement[i].basis );
-		current.right = new_k_element_node( coefficient = interp.multielement[i+1].coefficient, interp.multielement[i+1].basis );
+		current.left  = new_k_element_node( coefficient = multielement[i].coefficient,   multielement[i].basis );
+		current.right = new_k_element_node( coefficient = multielement[i+1].coefficient, multielement[i+1].basis );
 
 		ast = root;
 	}
 
-	// print( "PRINTING AST NODE FOR THE SYMBOL CONSTRUCTED FROM THE MULTIELEMENT\n" );
-	// print_ast( subtree );
-
 	return ast;	
 }
 
-convert_multielement_to_expression :: ( interp: *Interpreter, env: *Environment ) -> ( expression: string ) {
+multielement_to_expression :: ( multielement: Multi_Element, env: *Environment ) -> ( expression: string ) {
+	
+	// DOES STRING BUILDER USE TEMPORARY STORAGE???
 
 	// Grade 0 elements have an empty string as their 'symbol'
 	// When printing a grade 0 the coefficient will only be reflected
@@ -192,17 +204,18 @@ convert_multielement_to_expression :: ( interp: *Interpreter, env: *Environment 
 	coefficient: string;
 
 	i := 0;
-	while i < interp.num_terms-1 {
+	while i < multielement.count-1 {
 		defer i += 1;
-		basis       = interp.multielement[i].basis;
-		coefficient = tprint( "%", interp.multielement[i].coefficient );
+		basis       = multielement[i].basis;
+		coefficient = tprint( "%", multielement[i].coefficient );
 
 		append( *builder, coefficient );
 		append( *builder, env.basis_elements[basis].symbol );
 		append( *builder, " + " );	
 	}
-	basis 		 = interp.multielement[i].basis;
-	coefficient  = tprint( "%", interp.multielement[i].coefficient );
+
+	basis 		 = multielement[i].basis;
+	coefficient  = tprint( "%", multielement[i].coefficient );
 	append( *builder, coefficient );
 	append( *builder, env.basis_elements[basis].symbol );
 
@@ -211,32 +224,36 @@ convert_multielement_to_expression :: ( interp: *Interpreter, env: *Environment 
 	return expression;
 }
 
-update_symbol_table :: ( name: string, ast: *Ast_Node, expression: string, interp: *Interpreter ) {
+update_symbol :: ( name: string, value: Multi_Element, symbol_table: *Symbol_Table ) {
 
 	// if the symbol table gets 'big' for whatever that means we should make this a hashtable
 	i: int = 0;
-	symbol_index: int = -1;
-	while i < interp.num_symbols {
-		defer i += 1;
-		if interp.symbols[i].name == name {
+	found: bool = false;
+	while i < symbol_table.num_symbols {
+		if symbol_table.symbols[i].name == name {
+			found = true;
 			break;
 		}
+		i += 1;
 	}
 
-	if i < interp.num_symbols {
+	if found {
 		// found an existing symbol, update it
-		// TODO: THIS SHOULD FREE THE OLD AST'S MEMORY!!!
-		interp.symbols[i].ast = ast;
-		interp.symbols[i].expression = expression;
+		memcpy( symbol_table.symbols[i].value.data, value.data, value.count * size_of(K_Element) );
+		symbol_table.symbols[i].value.count = value.count;
 	}
 	else {
 		// did not find an existing symbol, add it provided we have enough space
-		assert( i < MAX_NUM_SYMBOLS );
-		interp.symbols[i].name       = name;
-		interp.symbols[i].ast  		 = ast;
-		interp.symbols[i].expression = expression;
+		assert( i < Symbol_Table.MAX_NUM_SYMBOLS );
+		assert( name.count <= Symbol_Table.SYMBOL_NAME_MAX_SIZE );
 
-		interp.num_symbols += 1;
+		memcpy( symbol_table.symbols[i].name.data,  name.data, name.count );
+		symbol_table.symbols[i].name.count = name.count;
+
+		memcpy( symbol_table.symbols[i].value.data, value.data, value.count * size_of (K_Element) );
+		symbol_table.symbols[i].value.count = value.count;
+
+		symbol_table.num_symbols += 1;
 	}
 
 	return;
@@ -375,7 +392,7 @@ eval_regressive_product :: ( lvalue: K_Element, rvalue: K_Element, n_element: s6
 	return result;
 }
 
-build_multielement :: ( interp: *Interpreter, env: *Environment ) {
+build_multielement :: ( interp: *Interpreter, env: *Environment ) -> ( multielement: Multi_Element ) {
 
 	// This procedure builds a multielement within the interpreter.
 	//
@@ -389,12 +406,14 @@ build_multielement :: ( interp: *Interpreter, env: *Environment ) {
 	// the multielement will be sparse after this operation however it will contain the correct sums for each
 	// basis element that was part of the original ast.
 
+	multielement: Multi_Element;
+
 	while !stack_is_empty( *interp.stack ) {
 		element, success := stack_pop( *interp.stack );
 		display_index := env.basis_elements[element.basis].display_order;
 
-		interp.multielement[display_index].coefficient += element.coefficient;
-		interp.multielement[display_index].basis        = element.basis; // use this as an implicit flag to indicate this index was updated
+		interp.multielement_builder[display_index].coefficient += element.coefficient;
+		interp.multielement_builder[display_index].basis        = element.basis; // use this as an implicit flag to indicate this index was updated
 	}
 
 	// filter/pack the multielement to only include non-empty indices
@@ -403,19 +422,22 @@ build_multielement :: ( interp: *Interpreter, env: *Environment ) {
 	num_scalar_terms: int = 0;
 	end: int = 0;
 	for i: 0..env.num_basis_elements-1 {
-		if interp.multielement[i].basis >= 0 {
-			if interp.multielement[i].basis == 0 {
+		if interp.multielement_builder[i].basis >= 0 {
+			if interp.multielement_builder[i].basis == 0 {
 				num_scalar_terms += 1;
 			}
-			interp.multielement[end] = interp.multielement[i];
-			interp.num_terms += 1;
+			interp.multielement_builder[end] = interp.multielement_builder[i];
+			interp.num_terms_in_multielement += 1;
 			end += 1;	
 		}
 	}
 
 	if num_scalar_terms > 0 {
-		interp.num_terms -= (num_scalar_terms - 1); // count scalars a single time
+		interp.num_terms_in_multielement -= (num_scalar_terms - 1); // count scalars a single time
 	}
 
-	return;
+	multielement.data  = interp.multielement_builder.data;
+	multielement.count = interp.num_terms_in_multielement; 
+
+	return multielement;
 }
