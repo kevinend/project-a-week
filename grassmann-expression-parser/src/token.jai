@@ -10,14 +10,16 @@ Range :: struct(T: Type) {
 
 Token_Type :: enum u8 {
 
+	Undefined;
 	Error;
 	End_Of_Input;
 	
 	Identifier;
 
+	Keyword_Exit;
 	Keyword_Dimension;
-	Keyword_Basis_Elements;
-	Keyword_Help;
+	Keyword_Basis_Elements; // NOT HANDLED!!
+	Keyword_Help;			// NOT HANDLED!!
 
 	Basis_Element;
 

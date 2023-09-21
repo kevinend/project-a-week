@@ -1,13 +1,12 @@
 #scope_export
 
-// TODO: Never implmented the character and line number tracking on the tokens
-
-MAX_NUM_TOKENS_PER_EXPRESSION :: 100;  // an expression is a single line of input
-LEXER_TEMP_BUFFER_LENGTH      ::  64; // dictates the size of identifiers and the number of digits in a number
 Lexer :: struct {
 
-	current_line_number: 	 Line_Number;
-	current_character_index: Character_Index;
+	MAX_NUM_TOKENS_PER_EXPRESSION :: 100;  // an expression is a single line of input
+	TEMP_BUFFER_LENGTH      	  ::  64; // dictates the size of identifiers and the number of digits in a number
+
+	current_line_number: 	 Line_Number     = 0;
+	current_character_index: Character_Index = 0;
 
 	input: string;
 	input_cursor: int;
@@ -15,13 +14,12 @@ Lexer :: struct {
 	tokens: [MAX_NUM_TOKENS_PER_EXPRESSION] Token;
 	num_tokens: int = 0;
 
-	temp_buffer: [LEXER_TEMP_BUFFER_LENGTH] u8;
+	temp_buffer: [TEMP_BUFFER_LENGTH] u8;
 }
 
 
-lexer_set_input :: ( lexer: *Lexer, user_input: string ) {
+lexer_set_input_from_string :: ( lexer: *Lexer, user_input: string ) {
 
-	lexer.current_line_number 	  = 1;
 	lexer.current_character_index = 0;
 
 	lexer.input = user_input;
@@ -47,7 +45,7 @@ lexer_generate_tokens :: ( lexer: *Lexer, one_element_symbols: [] string ) {
 	while true {  	
 	 	
 	 	success, c0 = peek_next_character( lexer );
-		while success && is_space( c0 ) {
+		while success && is_space( c0 ) { // is_space is from JAI library; Basic???
 			consume_character( lexer );
 			success, c0 = peek_next_character( lexer );
 		}
@@ -175,6 +173,11 @@ lexer_generate_tokens :: ( lexer: *Lexer, one_element_symbols: [] string ) {
 	return;	
 }
 
+lexer_contains_no_tokens :: ( lexer: *Lexer ) -> ( yes_no: bool ) {
+
+	return lexer.tokens[0].type == .End_Of_Input;
+}
+
 print_tokens :: ( lexer: *Lexer, header: string ) {
 	
 	print( "%\n", header );
@@ -191,6 +194,7 @@ print_tokens :: ( lexer: *Lexer, header: string ) {
 			case .Close_Square_Brace; 	  	{ print( "CLOSE_SQUARE_BRACE\n" ); }
 			case .Comma;			  	  	{ print( "COMMA\n" ); }
 			case .Identifier; 		  	  	{ print( "Token == %\n", token.identifier ); }
+			case .Keyword_Exit;				{ print( "KEYWORD_EXIT\n" ); }
 			case .Keyword_Dimension;      	{ print( "KEYWORD_DIMENSION\n" ); }
 			case .Keyword_Basis_Elements; 	{ print( "KEYWORD_BASIS_ELEMENTS\n" ); }
 			case .Basis_Element;          	{ print( "Basis elements %\n", token.basis ); }
@@ -228,7 +232,16 @@ peek_next_character :: inline ( lexer: *Lexer ) -> (success: bool, c: u8) {
 }
 
 consume_character :: inline ( lexer: *Lexer ) {
-	lexer.input_cursor += 1;	
+
+	print( "(Line,Character) == (%,%)\n", lexer.current_line_number, lexer.current_character_index );
+	
+	if lexer.input[lexer.input_cursor] == #char "\n" {
+		print( "This is a newline\n" );
+		lexer.current_line_number += 1;	
+	}
+
+	lexer.input_cursor 			  += 1;
+	lexer.current_character_index += 1;
 }
 
 begins_identifier :: inline ( c: u8 ) -> ( yes_no: bool ) {
@@ -241,37 +254,29 @@ compose_identifier_keyword_or_basis_symbol_token :: ( lexer: *Lexer, basis_one_e
 		return is_alnum( c ) || c == #char "_";
 	}
 
-	is_identifier_keyword :: ( ident: string ) -> ( yes_no: bool, keyword_type: Token_Type ) {
-		
-		if ident == "Dimension" {
-			return true, .Keyword_Dimension;
+	is_identifier_keyword :: ( ident: string ) -> ( type: Token_Type ) {
+	
+		type: Token_Type;
+		if ident == {
+			case "exit";      { type = .Keyword_Exit; 	   }
+			case "dimension"; { type = .Keyword_Dimension; }
+			case;             { type = 0; }
 		}
-		else
-		if ident == "Basis_Elements" {
-			return true, .Keyword_Basis_Elements;
-		}
-		else 
-		if ident == "Help" {
-			return true, .Keyword_Help;
-		}
-		else {
-			return false, .Error;
-		}
+
+		return type;
 	}
 
-	is_identifier_basis_element :: ( ident: string, basis_one_element_symbols: [] string ) -> ( yes_no: bool, basis_element_index: int ) {
+	is_identifier_basis_element :: ( ident: string, basis_one_element_symbols: [] string ) -> ( basis_element_index: int ) {
 		
-		found: bool = false;
 		basis_element_index: int = -1;
 		for i: 0..basis_one_element_symbols.count-1 {
 			if ident == basis_one_element_symbols[i] {
-				found = true;
 				basis_element_index = i; 
 				break;
 			}
 		}
 
-		return found, basis_element_index;
+		return basis_element_index;
 	}
 
 	success: bool;
@@ -283,7 +288,7 @@ compose_identifier_keyword_or_basis_symbol_token :: ( lexer: *Lexer, basis_one_e
 	t.count = 0; 
 
 	while true {
-		if t.count > LEXER_TEMP_BUFFER_LENGTH {
+		if t.count > Lexer.TEMP_BUFFER_LENGTH {
 			// consume rest of the identifier???
 			break;
 		}
@@ -297,24 +302,30 @@ compose_identifier_keyword_or_basis_symbol_token :: ( lexer: *Lexer, basis_one_e
 		else { break; }
 	}
 
-	assert( t.count <= LEXER_TEMP_BUFFER_LENGTH );
+	assert( t.count <= Lexer.TEMP_BUFFER_LENGTH );
+
+	// check if the identifier is a keyword or a basis element first otherwise it is an identifier
 
 	token: Token;
-	token.type 		 = .Identifier;
-	token.identifier = copy_string( cast(string) t ); // maybe do this at the end if it is truly an identifier??? we copy it and throw it away in the case of keywords and basis elements atm.
+	token.type = .Undefined; 
 
-	is_keyword, keyword_type := is_identifier_keyword( token.identifier );
-	if is_keyword {
-		token.type = keyword_type;
+	keyword_token_type := is_identifier_keyword( cast(string) t );
+	if keyword_token_type {
+		token.type = keyword_token_type;
+		return token;
 	}
-	else {
-		is_basis_element, index := is_identifier_basis_element( token.identifier, basis_one_element_symbols ); // lexer.basis_one_element_symbols );
-		if is_basis_element {
-			token.type  = .Basis_Element;
-			token.basis = (1 << index); // see note above, wasting the string copy, we don't need the sybmol/identifier anymore
-			// maybe put this as the first check then do the keyword then default to the identifier??? hmm..
-		}
+
+	basis_element_index := is_identifier_basis_element( cast(string) t, basis_one_element_symbols );
+	if basis_element_index >= 0 {
+		token.type  = .Basis_Element;
+		token.basis = (1 << basis_element_index);
+		return token;
 	}
+
+	token.type = .Identifier;
+	token.identifier.data = talloc( t.count * size_of(u8) );
+	memcpy( token.identifier.data, t.data, t.count );
+	token.identifier.count = t.count;
 
 	return token;
 }
@@ -351,7 +362,7 @@ compose_number_token :: ( lexer: *Lexer ) -> ( token: Token ) {
 	t.count = 0;
 
 	while true {
-		if t.count > LEXER_TEMP_BUFFER_LENGTH {
+		if t.count > Lexer.TEMP_BUFFER_LENGTH {
 			// consume the rest of the digits?
 			break;
 		}
@@ -367,7 +378,7 @@ compose_number_token :: ( lexer: *Lexer ) -> ( token: Token ) {
 		}
 	}
 
-	assert( t.count <= LEXER_TEMP_BUFFER_LENGTH );
+	assert( t.count <= Lexer.TEMP_BUFFER_LENGTH );
 
 	// pushed all the digits onto the temp buffer (converting from ascii to their integer values).
 	// walk the temp buffer and digits and build final number
@@ -405,7 +416,7 @@ compose_end_of_input_token :: () -> ( token: Token ) {
 
 add_token :: ( lexer: *Lexer, token: Token ) {
 
-	assert( lexer.num_tokens < MAX_NUM_TOKENS_PER_EXPRESSION );
+	assert( lexer.num_tokens < Lexer.MAX_NUM_TOKENS_PER_EXPRESSION );
 	lexer.tokens[lexer.num_tokens] = token;
 	lexer.num_tokens += 1;
 

@@ -18,10 +18,15 @@ main :: () {
 		print( "%", PROMPT );
 	
 		user_input = read_line();
-		if user_input == "exit" { break; }
+		if user_input == "exit\r\n" { break; } // replace this with an exit keyword
 
-		lexer_set_input( *lexer, user_input );
+		lexer_set_input_from_string( *lexer, user_input );
 		lexer_generate_tokens( *lexer, env.one_element_symbols );
+
+		if lexer_contains_no_tokens( *lexer ) { 
+		    print( "No input; Enter a valid Grassmann expression\n" );
+			continue; 
+		}
 
 		print_tokens( *lexer, "Tokens:" );
 
@@ -53,7 +58,6 @@ main :: () {
 #load "ast.jai";
 #load "expand.jai";
 #load "eval.jai";
-// #load "queue.jai";
 #load "stack.jai";
 
 #import "Basic";

@@ -1,25 +1,24 @@
 MAIN: 
 xx--Use Temporary allocator, free memory on every iteration of the loop
+xx--Allow free-form expressions, so just e1 ^ e1 should return the result to the console
 --Allow input to come from a file instead of stdin
---Allow free-form expressions, so just e1 ^ e1 should return the result to the console
 
 LEXER:
-xxConvert number to K-Element with basis = 0
---How do we handle empty input in the buffer or zero tokens?
---Remove the one element symbols and pass in the environment directly for symbol resolution
---Error messages
+xx--Convert number to K-Element with basis = 0
+xx--How do we handle empty input in the buffer or zero tokens?
+xx--Pass the one element symbols from the environment instead of caching them in the lexer
+--Not handling the case of line numbers and characters in the input
+--Error messages, add a 'error_detected' flag on the lexer and have that fill out a log
+  You set the flag, log the message then report in main if you found an error
 
 PARSER:
 --Maybe need but it would be nice just to print the value, i guess we don't want to sub if it is just a raw token?
 --Handle keywords, kind of skipping over them for now
 --Revisit the use of t0,t1,t2; are they too simplistic? is the code hard to follow?
 --Error messages
-
-L1 = e1;
-L1; --> should print the value
-or some expression should print the value
-other than that it just needs assigned
-
+  Undeclared idenfitier, this error needs to propogate up or we need to return NULL
+  Or something like hte lexer where you flag
+ 
 EVAL:
 --Interior product, use regressive with comp of second arg
 --Left and Right additive identity (0 + e1) does not resolve correctly

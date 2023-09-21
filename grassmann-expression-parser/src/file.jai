@@ -1,6 +1,6 @@
 #scope_export
 
-MAX_USER_INPUT_LENGTH 		:: 50;
+MAX_USER_INPUT_LENGTH 		:: 100;
 CARRIAGE_RETURN_AND_NEWLINE :: 2;
 USER_INPUT_BUFFER_SIZE 		:: MAX_USER_INPUT_LENGTH + CARRIAGE_RETURN_AND_NEWLINE;
 
@@ -13,24 +13,22 @@ read_line :: () -> ( user_input: string ) {
 		std_in.handle = GetStdHandle( STD_INPUT_HANDLE );
 	}
 
-	// Read the input from the user through the terminal
+	// Read user input using terminal/console.
 	user_input: string;
-	user_input.data = user_input_buffer.data;	
-	
+	user_input.data = user_input_buffer.data;
+
 	while true {
 		bytes_read: u32;
 		success := ReadFile( std_in.handle, user_input_buffer.data, cast(u32)USER_INPUT_BUFFER_SIZE, *bytes_read, null );
-		if bytes_read {
+		if bytes_read > 0 {
 			user_input.count = bytes_read;
-			if user_input.data[user_input.count-1] == #char "\n" { // read a whole line
-				user_input.count -= CARRIAGE_RETURN_AND_NEWLINE;
-				break; 
+			if user_input.data[user_input.count-1] == #char "\n" { // read a whole line from standard in
+				break;
 			}
 			else {
-				// Input exceeds the fixed buffer length
-				// Ignore the input, flush stdin, and continue to the next iteration
-				print( "Expression length exceeded limit of % characters ignoring input\n", MAX_USER_INPUT_LENGTH );
-					
+				// Input exceeds the fixed buffer length.
+				// Ignore the input. Flush stdin. Continue to the next iteration.
+				print( "Expression length exceeded limit of % characters, ignoring input\n", MAX_USER_INPUT_LENGTH );
 				user_input.count = 0;
 
 				// there has to be a better way to flush stdin...
@@ -43,10 +41,12 @@ read_line :: () -> ( user_input: string ) {
 				continue;
 			}
 		}
-		else {
-			// error, unable to read the requested number of bytes of input from standard in!
-		}
 	}
 
 	return user_input;
 }
+
+// when you read a file you are not sure the number of bytes you will get back
+// or how many compose a line
+// so you want to try and read more or less, or you have to read a single file
+// you want to read an entire file and then iterate through it and when you find the newline just deal with it then
