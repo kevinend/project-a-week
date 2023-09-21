@@ -105,8 +105,8 @@ print_ast :: ( ast: *Ast_Node, header: string ) {
 
 #scope_file
 
-peek_next_token :: inline ( parser: *Parser ) -> ( token: *Token ) {
-	return *parser.tokens[parser.token_cursor];
+peek_token :: inline ( parser: *Parser, offset: int = 0 ) -> ( token: *Token ) {
+	return *parser.tokens[parser.token_cursor + offset];
 }
 
 consume_token :: inline ( parser: *Parser ) {
@@ -116,6 +116,16 @@ consume_token :: inline ( parser: *Parser ) {
 
 parse_statement :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( node: *Ast_Node ) {
 
+	// Valid Statements:
+	//  <statement> ::= <ident> '=' <expression> ';'
+	//  <statement> ::= <expression>;
+	//
+	// To determine if the statement is an assignment we need to read two tokens.
+	// Hacky but if there is only a single token in the expression we append the END_OF_INPUT
+	// token onto the end so there will always be two tokens in the buffer!
+
+	// TODO: No error checking!! It is piss poor at the moment!!!
+
 	t0: *Token;
 	t1: *Token;
 	t2: *Token;
@@ -123,46 +133,31 @@ parse_statement :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( node: *
 
 	node: *Ast_Node = null;
 
-	t0 = peek_next_token( parser );
-	if t0.type == .Identifier {
+	t0 = peek_token( parser );
+	t1 = peek_token( parser, offset = 1 );
+
+	if t0.type == .Identifier && t1.type == .Assign {
+		// assignment statement
+		consume_token( parser );
 		consume_token( parser );
 
-		t1 = peek_next_token( parser );
-		if t1.type == .Assign {
+		left  := new_identifier_node( t0.identifier );
+		right := parse_expression( parser, symbol_table );
+
+		t2 = peek_token( parser );
+		if t2.type == .Semicolon {
 			consume_token( parser );
-
-			left  := new_identifier_node( t0.identifier );
-			right := parse_expression( parser, symbol_table );
-
-			t2 = peek_next_token( parser );
-			if t2.type == .Semicolon {
-				consume_token( parser );
-				binary_op := new_binary_operator_node( .Assign, left, right );
-				node = binary_op;
-			}
-			else {
-				print( "Parse error, expected a semicolon following the assignment statement\n" );
-			}
-		}
-		else
-		if t1.type == .Semicolon {
-			value, success := lookup_symbol( t0.identifier, symbol_table );
-			if !success {
-				print( "Unresolved identifier %\n", t0.identifier );
-				node = null;
-			}
-			else {
-				node = multielement_to_ast( value );
-			}
+			binary_op := new_binary_operator_node( .Assign, left, right );
+			node = binary_op;
 		}
 		else {
-			print( "Parse error, expected an equals sign or semicolon following identifier\n" );
+			print( "Parse error, expected a semicolon following an assignment statement\n" );
 		}
 	}
 	else {
-		print( "Parse error, identifier expected at the start of each statement\n" );
+		node = parse_expression( parser, symbol_table );
 	}
-
+	
 	return node;
 }
 
@@ -173,7 +168,7 @@ parse_expression :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( node: 
 	
 	while true {	
 			
-		t0 := peek_next_token( parser );
+		t0 := peek_token( parser );
 		if t0.type == .Semicolon || t0.type == .End_Of_Input {
 			break;
 		}
@@ -227,7 +222,7 @@ parse_exterior_term :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( nod
 	factor = parse_exterior_factor( parser, symbol_table );
 
 	while true {
-		t0 := peek_next_token( parser );
+		t0 := peek_token( parser );
 
 		if t0.type == .Semicolon || t0.type == .End_Of_Input {
 			break;
@@ -266,7 +261,7 @@ parse_exterior_factor :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( n
 	// capture unary operators and apply after parsing the factor
 	num_unary_operators: int = 0;
 	while true {
-		t0 = peek_next_token( parser );
+		t0 = peek_token( parser );
 		if t0.type == {
 			case .Minus; {
 				consume_token( parser );
@@ -287,7 +282,7 @@ parse_exterior_factor :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( n
 		}
 	}
 
-	t0 = peek_next_token( parser );
+	t0 = peek_token( parser );
 	if t0.type == .Basis_Element {
 		consume_token( parser );
 		k_element := new_k_element_node( coefficient = 1, basis = t0.basis );
@@ -308,7 +303,7 @@ parse_exterior_factor :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( n
 		scalar := new_k_element_node( coefficient = t0.number, basis = 0 );
 		node = scalar;
 
-		t1 = peek_next_token( parser );
+		t1 = peek_token( parser );
 		if t1.type == .Identifier {
 			consume_token( parser );
 			value, success := lookup_symbol( t1.identifier, symbol_table );
@@ -332,7 +327,7 @@ parse_exterior_factor :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( n
 	if t0.type == .Open_Paren {
 		consume_token( parser );
 		node = parse_expression( parser, symbol_table );
-		t0 = peek_next_token( parser );
+		t0 = peek_token( parser );
 		if t0.type  == .Close_Paren {
 			consume_token( parser );
 		}

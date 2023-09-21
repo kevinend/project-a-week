@@ -101,6 +101,7 @@ evaluate :: ( node: *Ast_Node, env: *Environment, interp: *Interpreter ) {
 		// eval and assign
 		eval( expression, env, interp );
 		multielement := build_multielement( interp, env );
+
 		update_symbol( ident.name, multielement, *interp.symbol_table );
 	}
 	else {
@@ -339,7 +340,7 @@ eval_grassmann_product :: ( op: Binary_Op, lvalue: K_Element, rvalue: K_Element,
 	result: K_Element;
 	if op == {
 		case .Exterior_Product; {
-			result = eval_exterior_product( lvalue, rvalue );
+			result = eval_exterior_product( lvalue, rvalue, env.dimension );
 		}
 		case .Regressive_Product; {
 			result = eval_regressive_product( lvalue, rvalue, env.dimension );
@@ -349,7 +350,7 @@ eval_grassmann_product :: ( op: Binary_Op, lvalue: K_Element, rvalue: K_Element,
 	success := stack_push( *interp.stack, result );
 }
 
-eval_exterior_product :: ( lvalue: K_Element, rvalue: K_Element ) -> ( result: K_Element ) {
+eval_exterior_product :: ( lvalue: K_Element, rvalue: K_Element, dimension: int ) -> ( result: K_Element ) {
 
 	result := K_Element.{ coefficient = 0, basis = 0 };
 
@@ -361,6 +362,8 @@ eval_exterior_product :: ( lvalue: K_Element, rvalue: K_Element ) -> ( result: K
 	if (lvalue.basis & rvalue.basis) == 0 { // no one elements in common; implies sum of grades is less than or equal to N	
 		result.coefficient  = lvalue.coefficient * rvalue.coefficient;
 		result.basis 		= lvalue.basis | rvalue.basis;
+
+		result.coefficient *= anticommutative_coefficient( lvalue, rvalue, dimension );
 	}
 
 	return result;
@@ -384,44 +387,39 @@ build_multielement :: ( interp: *Interpreter, env: *Environment ) -> ( multielem
 
 	// This procedure builds a multielement within the interpreter.
 	//
-	// Once all the sums in the tree are evaluated our interp.multielement will have a list of 
-	// integers representing the simplified basis elements that are part of the multielement.
-	//
-	// Then the application can decide whether that needs converted into an AST for injection into
-	// another expression on a subsequent application loop or converted to a string to present to the user.
-
-	// walk the stack and build the multielement in DISPLAY order by using the basis_elements lookup table.
-	// the multielement will be sparse after this operation however it will contain the correct sums for each
+	// Walk the stack and build the multielement in DISPLAY order by using the basis_elements lookup table.
+	// The multielement will be sparse after this operation however it will contain the correct sums for each
 	// basis element that was part of the original ast.
 
 	multielement: Multi_Element;
 
+	// sum the basis elements/collect terms 
 	while !stack_is_empty( *interp.stack ) {
 		element, success := stack_pop( *interp.stack );
-		display_index := env.basis_elements[element.basis].display_order;
+		i := env.basis_elements[element.basis].display_order;
 
-		interp.multielement_builder[display_index].coefficient += element.coefficient;
-		interp.multielement_builder[display_index].basis        = element.basis; // use this as an implicit flag to indicate this index was updated
+		interp.multielement_builder[i].coefficient += element.coefficient;
+		interp.multielement_builder[i].basis        = element.basis;	
 	}
 
 	// filter/pack the multielement to only include non-empty indices
-	// [s1e1, ... s2e1^e2 ... s3e1^e2^e3] will be condensed down to [s1e2,s2e1^e2,s3e1^e2^e3]
+	// [s1e1, ... s2e1^e2 ... s3e1^e2^e3] will be condensed down to [s1e2,s2e1^e2,s3e1^e2^e3], provided the scalar coefficient is non-zero
 
 	num_scalar_terms: int = 0;
-	end: int = 0;
+	end:   int = 0;
+
 	for i: 0..env.num_basis_elements-1 {
-		if interp.multielement_builder[i].basis >= 0 {
-			if interp.multielement_builder[i].basis == 0 {
-				num_scalar_terms += 1;
-			}
+		if interp.multielement_builder[i].coefficient != 0 {
 			interp.multielement_builder[end] = interp.multielement_builder[i];
 			interp.num_terms_in_multielement += 1;
-			end += 1;	
+			end += 1;
 		}
 	}
 
-	if num_scalar_terms > 0 {
-		interp.num_terms_in_multielement -= (num_scalar_terms - 1); // count scalars a single time
+	if interp.num_terms_in_multielement == 0 { // result is zero
+		interp.multielement_builder[0].coefficient = 0;
+		interp.multielement_builder[0].basis       = 0;
+		interp.num_terms_in_multielement           = 1;
 	}
 
 	multielement.data  = interp.multielement_builder.data;
