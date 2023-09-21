@@ -137,7 +137,7 @@ new_identifier_node :: ( name: string ) -> ( node: *Identifier_Node ) {
 	assert( node != null );
 
 	node.kind = .Identifier;
-	node.name = copy_string( name ); // seems wasteful, can we intern???
+	node.name = name; 		// alias the allocated identifier name from the lexer; set to temporary storage and wiped on each iteration
 
 	return node;
 }

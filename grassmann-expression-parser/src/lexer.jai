@@ -260,7 +260,7 @@ compose_identifier_keyword_or_basis_symbol_token :: ( lexer: *Lexer, basis_one_e
 		if ident == {
 			case "exit";      { type = .Keyword_Exit; 	   }
 			case "dimension"; { type = .Keyword_Dimension; }
-			case;             { type = 0; }
+			case;             { type = .Undefined; }
 		}
 
 		return type;
@@ -380,8 +380,8 @@ compose_number_token :: ( lexer: *Lexer ) -> ( token: Token ) {
 
 	assert( t.count <= Lexer.TEMP_BUFFER_LENGTH );
 
-	// pushed all the digits onto the temp buffer (converting from ascii to their integer values).
-	// walk the temp buffer and digits and build final number
+	// Pushed all the digits onto the temp buffer (converting from ascii to their integer values).
+	// Walk the temp buffer and digits and build final number.
 	// Ex. 123 --> 1*(10^2) + 2*(10^1) + 1*(10^0)
 
 	base:  int = 10;

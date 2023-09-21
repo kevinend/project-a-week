@@ -122,9 +122,8 @@ parse_statement :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( node: *
 	//
 	// To determine if the statement is an assignment we need to read two tokens.
 	// Hacky but if there is only a single token in the expression we append the END_OF_INPUT
-	// token onto the end so there will always be two tokens in the buffer!
-
-	// TODO: No error checking!! It is piss poor at the moment!!!
+	// token onto the end so there will always be two tokens in the buffer.
+	// If the input is empty the main loop just continues to the next iteration as well.
 
 	t0: *Token;
 	t1: *Token;
