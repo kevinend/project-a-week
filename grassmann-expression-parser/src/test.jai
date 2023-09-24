@@ -501,6 +501,46 @@ generate_basis_symbol :: ( element: int, grade: int, n: int, one_element_symbols
 main :: () {
 
 {
+	Test :: enum {
+		first;
+
+		start_commands;
+		command_1;
+		command_2;
+		end_commands;
+	}
+
+	cmd := Test.command_1;
+	if cmd > Test.start_commands && cmd < Test.end_commands {
+		print( "We fell inbetween here\n" );
+	}
+
+	cmd2 := Test.first;
+	if cmd2 > Test.start_commands && cmd2 < Test.end_commands {
+		print( "This shouldn't print shit\n" );
+	}
+	else {
+		print( "This ran fine\n" );
+	}
+}
+
+{
+	parser_reported_error := true;
+	while something := true {
+		print( "This loop is running\n" );
+		a: int = 5;
+		b: int = 10;
+
+		break something; // so that is one way to break out of the loop
+	}
+
+	if parser_reported_error == true {
+		print( "Error detected\n" );
+	}
+
+}
+
+{
 	MAX_NUM_SYMBOLS 	   :: 8;
 	SYMBOL_NAME_MAX_SIZE   :: 8;
 	MAX_NUM_BASIS_ELEMENTS :: 64; 

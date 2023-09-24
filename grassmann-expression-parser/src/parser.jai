@@ -1,5 +1,19 @@
 #scope_export
 
+// not sure we even handle literals in the lexer yet!
+// t = peek_token()
+// t = peek_token( x, 1 );
+// t = peek_token( x, 2 );
+//
+// if t.type < t.Keyword_Config_Start || t.type > t.Keyword_Config_End {
+//   error, expected a 'config' value to be specified
+// t = peek_token( x, 1 );
+// if t.type != .Assign {
+//    error, expected an assignment statement
+// }
+//
+
+
 /*
 	BNF for Grassmann expressions:
 		statement  		::= <identifier> "=" <expression> ";"
@@ -37,10 +51,16 @@ parser_set_tokens :: ( parser: *Parser, tokens: [] Token, num_tokens: int ) {
 
 parser_generate_ast :: ( parser: *Parser, symbol_table: *Symbol_Table ) {
 
-	// every valid user input starts with an identifier
-
-	root: *Ast_Node;
-	root = parse_statement( parser, symbol_table );
+	t0: Token;
+	root: *Ast_Node = null;
+	
+	t0 = peek_token( parser );
+	if t0.type == {
+	//	case .Keyword_Get;  { root = parse_get( parser );  }
+	//	case .Keyword_Set;  { root = parse_set( parser );  }
+	//	case .Keyword_Exit; { root = parse_exit( parser ); }
+		case; 				{ root = parse_statement( parser, symbol_table ); }
+	}
 
 	parser.ast = root;
 }
@@ -113,6 +133,444 @@ consume_token :: inline ( parser: *Parser ) {
 	parser.token_cursor += 1;
 	return;
 }
+
+// want to generate a Get_Config_Node
+// and a Set_Config_Node
+// tried to roll into a single 'command' node and that didn't work so well
+// really messy in how i tried to parse it
+// so i am thinking about splitting it up into it's own constitutient parts instead
+// something like
+//  Get_Config_Node, config, args
+//  Set_Config_Node, config, args
+//  Config_Node
+//    op
+//    config 
+//    args: [..], the Get-Config don't have any args
+//  Exit_Node
+// should we just have separate nodes?
+//  Get_Config_Node config
+//  Set_Config_Node config args --> this is a dynamic list (in temp storage) of the args
+//  Exit_Node
+//
+//  parse_get_config
+//  parse_set_config
+// you eventually have to iterate over everything though that is the thing
+// Get_Node --> they each point to their own thingies
+// Set_Node
+// Exit_Node
+// if .Keyword_Get { root = parse_get_command(); // read the config and store the config
+// else
+// if .Keyword_Set { root = parse_set_command(); // read the config and parse the equal sign and then the args based on the config
+// else
+// if .Keyword_Exit { root = parse_exit(); // }
+// else {
+//  assume it is a statement or expression that needs handled
+// }
+//
+//
+// 
+
+/*
+Config :: enum u8 {
+	Dimension;
+	Basis;
+}
+
+Get_Node :: struct {
+	config: Config;
+}
+
+Set_Node :: struct {
+	config: Config;
+	args:   [..] *Ast_Node;
+}
+
+parse_get :: ( parser: *Parser ) -> ( node: *Ast_Node ) {
+
+	// Get commands don't currently take arguments but they might in the future.
+	// Something like get basis 1 or something so added a similar loop to 'parse_set' to accomodate the potential change.
+
+	node: *Ast_Node = null;
+
+	t: Token;
+	consume_token( parser ); // consume the 'set' from the parent call
+
+	// Jai does not support 'Goto'.
+	// Without that statement the code becomes incredibly verbose and nested.
+	// Fudging the goto with a loop that iterates a single time and breaks at the end.
+	// If there is an error during parsing we report the error in the parser then break out of the loop
+	// effectively mirroring Goto's functionality.
+
+	while parse_loop := true {
+		
+		t = peek_token( parser );
+
+		if t.type == .Keyword_Dimension {
+			consume_token( parser );
+
+			t = peek_token( parser );
+			if t.type != .Semicolon {
+				// report parse error
+				break parse_loop;
+			}
+			consume_token( parser );
+
+			node = new_get_node( Config.Dimension );
+		}
+		else 
+		if t.type == .Keyword_Basis {
+			consume_token( parser );
+
+			t = peek_token( parser );
+			if t.type != .Semicolon {
+				// report parse error
+				break parse_loop;
+			}
+			consume_token( parser );
+
+			node = new_get_node( Config.Keyword );
+		}
+		else {
+			// report parse error, expected a configuration option following the get command
+		}
+
+		break parse_loop;
+	}
+
+	return node;
+}
+
+parse_command :: ( parser: *Parser ) -> ( node: *Ast_Node ) {
+
+	t: Token;
+
+	command: Token;
+	config:  Token;
+	args:    [..] *Ast_Node;
+	args.allocator = temp;
+
+	// Jai does not support 'Goto'.
+	// Without Goto the code becomes incredibly verbose and nested.
+	// Fudging the goto with a loop that iterates a single time and breaks at the end.
+	// If there is an error during parsing we report the error in the parser then break out of the loop
+	// effectively mirroring Goto's functionality.
+
+	while command_loop := true {
+	
+		t = peek_token( parser );
+		if t.type < Start_Command || t.type > End_Command {
+			// report parse error
+			break command_loop;
+		}
+		command = t;
+		consume_token( parser );
+
+		t = peek_token( parser );
+		if t.type < Start_Configs || t.type > End_Configs {
+			// report parse error
+			break command_loop;
+		}
+		config = t;
+		consume_token( parser );
+
+		if command == .Keyword_Get {
+			// supported get commands don't have arguments so the form is 'get {config};'. Create command node for the command/config combination.
+			node = new_command_node( command, config, args );
+		else
+		if command == .Keyword_Set {
+			// all set commands require arguments so they are of the form 'set {config} = {args};'
+			t = peek_token( parser );
+			if t.type != .Assign {
+				// report parse error
+				break command_loop;
+			}
+			consume_token( parser );
+
+			if config == .Dimension {
+				t = peek_token( parser );
+				if t.type != .Number {
+					// report parse error
+					break command_loop;
+				}
+				array_add( *args, new_literal_node( t.value ) );
+				consume_token( parser );
+
+				node = new_command_node( command, config, args ); // SHOULD WE RETURN THIS AT THE END???
+			}
+			else
+			if config == .Basis {
+				t = peek_token( parser );
+				if t.type != .Left_Brace { // report parse error break command_loop; }
+				consume_token( parser );
+			
+				t = peek_token( parser );
+				while (t.type != .Right_Brace || t.type != .End_Of_Input) {
+					if t.type != .Literal { // report parse error; break command_loop; }
+					
+					literal := new_literal_node( t.literal );
+					array_add( *args, literal );
+					consume_token( parser );
+
+					t = peek_token( parser );
+					if t.type != .Comma || t.type != .Right_Brace { // will be right brace on the last literal in the list of arguments
+						// report parse error
+						break command_loop;
+					}
+					consume_token( parser );
+
+					t = peek_token( parser );
+				}
+				
+				if t.type == .End_Of_Input { // report parse error; break command_loop; }
+
+				// found a right brace instead of the end of input token
+				consume_token( parser );
+
+				node = new_command_node( command, config, args );
+			}
+		}
+
+		break command_loop;
+	}
+
+	// all commands must end with a semicolon to be valid!
+	t = peek_token( parser );
+	if t.type != .Semicolon {
+		// report parse error
+	}
+	consume_token( parser );
+
+	return node;	
+}
+
+parse_set :: ( parser: *Parser ) -> ( node: *Ast_Node ) {
+
+	node: *Ast_Node = null;
+
+	t: Token;
+	consume_token( parser ); // consume the 'set' from the parent call
+
+	args: [..] *Ast_Node;	
+	args.allocator = temp; // allocate all arguments for the config setting into temporary storage
+	
+	// Jai does not support 'Goto'.
+	// Without that statement the code becomes incredibly verbose and nested.
+	// Fudging the goto with a loop that iterates a single time and breaks at the end.
+	// If there is an error during parsing we report the error in the parser then break out of the loop
+	// effectively mirroring Goto's functionality.
+
+	while parse_loop := true {
+
+		t = peek_token( parser );
+
+		if t.type == .Keyword_Dimension {
+			consume_token( parser );
+
+			t = peek_token( parser );
+			if t.type != .Assign { 
+				// report parser error
+				break parse_loop;
+			}
+			consume_token( parser );
+
+			t = peek_token( parser );
+			if t.type != .Number {
+				// report parser error
+				break parse_loop;
+			}
+			array_add( *args, new_literal_node( t.value ) );
+			consume_token( parser );
+
+			t = peek_token( parser );
+			if t.type != .Semicolon {
+				// report parse error
+				break parse_loop;
+			}
+			consume_token( parser );
+
+			node = new_set_node( Config.Dimension, args );
+		}
+		else
+		if t.type == .Keyword_Basis {
+			consume_token( parser );
+			
+			t = peek_token( parser );
+			if t.type != .Assign {
+				// report parse error
+				break parse_loop;
+			}
+			consume_token( parser );
+
+			t = peek_token( parser );
+			if t.type != .Left_Brace {
+				// report parse error
+				break parse_loop;
+			}
+			consume_token( parser );
+
+			t = peek_token( parser );
+			while t.type  != .Right_Brace || t.type != .End_Of_Input {
+				if t.type != .Literal {
+					// report parse error
+					break parse_loop;
+				}
+				literal := new_literal_node( t.literal );
+				array_add( *args, literal );
+				consume_token( parser );
+
+				t = peek_token( parser );
+				if t.type != .Comma || t.type != .Right_Brace { // will be right brace on the final literal of the list
+					// report parse error
+					break parse_loop;
+				}
+				consume_token( parser );
+				
+				t = peek_token( parser );
+			}
+
+			if t.type == .End_Of_Input {
+				// report parse error
+				break parse_loop;
+			}
+
+			// found a right brace instead of the end of input token
+			consume_token( parser );
+			
+			t = peek_token( parser );
+			if t.type != .Semicolon {
+				// report parse error
+				break parse_loop;
+			}
+			consume_token( parser );
+
+			node = new_set_node( Config.Basis, args );
+		}
+		
+		break parse_loop;
+	}
+
+	return node;
+}
+
+
+parse_command 	 :: ( parser: *Parser ) -> ( node: *Ast_Node ) {
+	
+	// Valid Commands:
+	// <command> 	::= 'get' | 'set' | 'exit;'
+	// <command> 	::= <command> <subcommand> '=' <args> ';'
+	// <subcommand> ::= 'basis' | 'dimension'
+	// <args>       ::= <number> | '['<literal>'...]'
+
+	t0: Token;
+	node: *Ast_Node = null;
+
+	t0 = peek_token( parser );
+	if t0.type == .Keyword_Exit {
+		command := Command.Exit;
+		node = new_command_node( command, 0, .[] );				
+	}
+	else
+	if t0.type == .Keyword_Get {
+		consume_token( parser );
+		command := Command.Get;
+		node = parse_subcommand( command, parser );
+	}
+	else
+	if t0.type == .Keyword_Set {
+		consume_token( parser );
+		command := Command.Set;
+		node = parse_subcommand( command, parser );
+	}
+
+	return node;	
+}
+
+parse_subcommand :: ( command: Command, parser: *Parser ) -> ( node: *Ast_Node ) {
+
+	t0: Token;
+	node: *Ast_Node = null;
+
+	t0 = peek_token( parser );
+	if t0.type == .Keyword_Dimension {
+		consume_token( parser );
+		subcommand := Subcommand.Dimension;
+		node = parse_command_args( command, subcommand, parser );	
+	}
+	else 
+	if t0.type == .Keyword_Basis {
+		consume_token( parser );
+		subcommand := Subcommand.Basis;
+		node = parse_command_args( command, subcommand, parser );
+	}
+	else {
+		// parse error expected a scubcommand for command 'X'
+	}
+}
+
+// TODO: this is broken and i can't figure it out
+parse_command_args :: ( command: Command, subcommand: Subcommand, parser: *Parser ) -> ( node: *Ast_Node ) {
+
+	t0: Token;
+	t1: Token;
+	t2: Token;
+	node: *Ast_Node = null;
+
+	if command == .Get {
+		if subcommand == .Dimension || subcommand == .Basis {
+			t0 = peek_token( parser );
+			if t0.type == .Semicolon {
+				consume_token( parser );
+				node = new_command_node( command, subcommand, .[] );
+			}
+			else {
+				// parse error, expected semicolon at the end of the statement
+			}
+		}
+	}
+	else
+	if command == .Set {
+		if subcommand == .Dimension {
+			t0 = peek_token( parser );
+			if t0.type == .Assign {
+				consume_token( parser );
+				t1 = peek_token( parser );
+				if t1.type == .Number {
+					consume_token( parser );
+					t2 = peek_token( parser );
+					if t2.type == .Semicolon {
+						consume_token( parser );
+						number := new_literal_node( t1.value );
+						node = new_command_node( command, subcommand, number );
+					}
+					else {
+						// parse error, expected a semicolon at the end of the statement
+					}	
+				}
+				else {
+					// parse error, expected a number for the subcommand
+				}
+			}
+			else {
+				// parse error, expected an assignment operator between the subcommand and the argument
+			}
+		}
+		else
+		if subcommand == .Basis {
+			t0 = peek_token( parser );
+			if t0.type == .Assign {
+
+			}
+			
+		}	
+		else {
+			// parse error, statement 'SET {SUB} X' requires an equal sign between subcommand and args
+		}
+	}
+
+	return node;
+
+}
+*/
 
 parse_statement :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( node: *Ast_Node ) {
 

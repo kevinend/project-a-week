@@ -16,10 +16,20 @@ Token_Type :: enum u8 {
 	
 	Identifier;
 
-	Keyword_Exit;
-	Keyword_Dimension;
-	Keyword_Basis_Elements; // NOT HANDLED!!
-	Keyword_Help;			// NOT HANDLED!!
+	// Keywords are parsed into separate categories.
+	// Those that are 'commands' and those that are 'configs'.
+	// Set sentinel values for start and end for each category to ease parsing.
+	
+	Start_Commands;	
+	  Keyword_Get;
+	  Keyword_Set;
+	  Keyword_Exit;
+	End_Commands;
+
+	Start_Configs;
+	  Keyword_Dimension;
+	  Keyword_Basis;
+	End_Configs;
 
 	Basis_Element;
 

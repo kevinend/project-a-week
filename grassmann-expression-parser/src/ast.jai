@@ -1,12 +1,35 @@
-#scope_export 
+#scope_export
+
+// Keyword_Set, Keyword_Basis ASSIGN NUMBER;
+// Keyword_Get, Keyword_Dimension ASSIGN [ident, ident, ident, ident];
+// Keyword Keyword -- expected keyword blah or blah or blah
+// set basis = [x1,x2,x3,x4];
+
+// keywords can be in two different forms in all reality
+// Exit_Node --> 
+// set dimension = 4;
+// set basis symbols = ['x','y','z','w'];
+// exit
+// Command_Node 
+//   command    --> exit   set
+//   subcommand --> set    basis
+//   args       --> [] *AST_Nodes 
+//	
+// set basis = ['x','y','z','w'];
+// set dimension = 4;
+// get basis
+// get dimension
+// set dimension = 3;
+// set basis = [x,y,z];
 
 Node_Kind :: enum {
 	
 	K_Element; // support for 'origin' as basis, so no longer just k-vectors
-	Literal;
 	Identifier;
+	Literal;
 	Unary_Op;
 	Binary_Op;
+	Command;
 }
 
 Ast_Node :: struct {
@@ -65,6 +88,28 @@ Binary_Operator_Node :: struct {
 	right: *Ast_Node;
 }
 
+Command :: enum {
+	
+	Get;
+	Set;
+	Exit;
+}
+
+Subcommand :: enum {
+	
+	Dimension;
+	Basis;
+}
+
+Command_Node :: struct {
+
+	#as using _kind: Ast_Node;	
+	
+	command: 	Command;    
+	subcommand: Subcommand; 
+	args: 		[] *Ast_Node; 
+}
+
 clone_node :: ( node: *Ast_Node ) -> ( cloned_node: *Ast_Node ) {
 
 	cloned_node: *Ast_Node = null;
@@ -104,8 +149,6 @@ clone_node :: ( node: *Ast_Node ) -> ( cloned_node: *Ast_Node ) {
 
 new_k_element_node :: ( coefficient: int, basis: s64 ) -> ( node: *K_Element_Node ) {
 
-	// node := New(K_Element_Node);
-
 	node: *K_Element_Node = talloc( size_of(K_Element_Node) );
 	assert( node != null );
 
@@ -118,8 +161,6 @@ new_k_element_node :: ( coefficient: int, basis: s64 ) -> ( node: *K_Element_Nod
 
 new_literal_node :: ( value: int ) -> ( node: *Literal_Node ) {
 
-	// node := New(Literal_Node);
-
 	node: *Literal_Node = talloc( size_of(Literal_Node) );
 	assert( node != null );
 	
@@ -131,8 +172,6 @@ new_literal_node :: ( value: int ) -> ( node: *Literal_Node ) {
 
 new_identifier_node :: ( name: string ) -> ( node: *Identifier_Node ) {
 
-	// node := New(Identifier_Node);
-
 	node: *Identifier_Node = talloc( size_of(Identifier_Node) );
 	assert( node != null );
 
@@ -143,8 +182,6 @@ new_identifier_node :: ( name: string ) -> ( node: *Identifier_Node ) {
 }
 
 new_unary_operator_node :: ( op: Unary_Op, operand: *Ast_Node ) -> ( node: *Unary_Operator_Node ) {
-
-	// node := New(Unary_Operator_Node);
 
 	node: *Unary_Operator_Node = talloc( size_of(Unary_Operator_Node) );
 	assert( node != null );
@@ -158,8 +195,6 @@ new_unary_operator_node :: ( op: Unary_Op, operand: *Ast_Node ) -> ( node: *Unar
 
 new_binary_operator_node :: ( op: Binary_Op, left: *Ast_Node, right: *Ast_Node ) -> ( node: *Binary_Operator_Node ) {
 
-	// node := New(Binary_Operator_Node);
-	
 	node: *Binary_Operator_Node = talloc( size_of(Binary_Operator_Node) );
 	assert( node != null );
 
@@ -169,4 +204,18 @@ new_binary_operator_node :: ( op: Binary_Op, left: *Ast_Node, right: *Ast_Node )
 	node.right = right;
 
 	return node;
+}
+
+new_command_node :: ( command: Command, subcommand: Subcommand, args: [] *Ast_Node ) -> ( node: *Command_Node ) {
+
+	node: *Command_Node = talloc( size_of(Command_Node) );
+	assert( node != null );
+
+	node.kind    	= .Command;
+	node.command 	= command;
+	node.subcommand = subcommand;
+	node.args       = args;
+
+	return node;
+
 }

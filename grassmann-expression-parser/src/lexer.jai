@@ -194,9 +194,11 @@ print_tokens :: ( lexer: *Lexer, header: string ) {
 			case .Close_Square_Brace; 	  	{ print( "CLOSE_SQUARE_BRACE\n" ); }
 			case .Comma;			  	  	{ print( "COMMA\n" ); }
 			case .Identifier; 		  	  	{ print( "Token == %\n", token.identifier ); }
+			case .Keyword_Get;				{ print( "KEYWORD_GET\n" ); }
+			case .Keyword_Set;				{ print( "KEYWORD_SET\n" ); }
 			case .Keyword_Exit;				{ print( "KEYWORD_EXIT\n" ); }
 			case .Keyword_Dimension;      	{ print( "KEYWORD_DIMENSION\n" ); }
-			case .Keyword_Basis_Elements; 	{ print( "KEYWORD_BASIS_ELEMENTS\n" ); }
+			case .Keyword_Basis; 			{ print( "KEYWORD_BASIS\n" ); }
 			case .Basis_Element;          	{ print( "Basis elements %\n", token.basis ); }
 			case .Number;     		  		{ print( "Token == %\n", token.number ); }
 			case .Plus; 		 	  		{ print( "PLUS\n"  ); }
@@ -258,7 +260,10 @@ compose_identifier_keyword_or_basis_symbol_token :: ( lexer: *Lexer, basis_one_e
 	
 		type: Token_Type;
 		if ident == {
+			case "get";		  { type = .Keyword_Get;	   }
+			case "set";		  { type = .Keyword_Set;	   }
 			case "exit";      { type = .Keyword_Exit; 	   }
+			case "basis";  	  { type = .Keyword_Basis;     }
 			case "dimension"; { type = .Keyword_Dimension; }
 			case;             { type = .Undefined; }
 		}
