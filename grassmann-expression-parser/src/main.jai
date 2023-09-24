@@ -15,6 +15,9 @@ main :: () {
 
 	user_input: string;
 	while true {
+		
+		reset_temporary_storage();
+
 		print( "%", PROMPT );
 	
 		user_input = read_line();
@@ -35,14 +38,16 @@ main :: () {
 
 		print_ast( parser.ast, "Ast:" );
 
-		ast := expand( parser.ast );
-		print_ast( ast, "Post-Expand Ast:" );
-
-		evaluate( ast, *env, *interp );
-
-		print_symbol_table( *interp.symbol_table, env.basis_elements );
-
-		reset_temporary_storage();
+		if parser.ast.kind == .Command {
+			evaluate_command();
+		}
+		else {
+			parser.ast = expand( parser.ast );
+			print_ast( parser.ast, "Post-Expand Ast:" );
+			evaluate( parser.ast, *env, *interp );
+			print_symbol_table( *interp.symbol_table, env.basis_elements );
+		}
+	
 	}
 
 	return;

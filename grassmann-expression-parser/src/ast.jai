@@ -51,7 +51,7 @@ Identifier_Node :: struct {
 Literal_Node :: struct {
 
 	#as using _kind: Ast_Node;
-	value: int;
+	text: string;
 }
 
 Unary_Op :: enum {
@@ -95,8 +95,8 @@ Command :: enum {
 	Exit;
 }
 
-Subcommand :: enum {
-	
+Config :: enum {
+		
 	Dimension;
 	Basis;
 }
@@ -106,7 +106,7 @@ Command_Node :: struct {
 	#as using _kind: Ast_Node;	
 	
 	command: 	Command;    
-	subcommand: Subcommand; 
+	config: 	Config; 
 	args: 		[] *Ast_Node; 
 }
 
@@ -125,7 +125,7 @@ clone_node :: ( node: *Ast_Node ) -> ( cloned_node: *Ast_Node ) {
 	else
 	if node.kind == .Literal {
 		literal 	:= cast(*Literal_Node)node;
-		cloned_node = new_literal_node( literal.value );
+		cloned_node = new_literal_node( literal.text );
 	}
 	else
 	if node.kind == .Unary_Op {
@@ -159,13 +159,13 @@ new_k_element_node :: ( coefficient: int, basis: s64 ) -> ( node: *K_Element_Nod
 	return node;
 }
 
-new_literal_node :: ( value: int ) -> ( node: *Literal_Node ) {
+new_literal_node :: ( text: string ) -> ( node: *Literal_Node ) {
 
 	node: *Literal_Node = talloc( size_of(Literal_Node) );
 	assert( node != null );
 	
 	node.kind = Node_Kind.Literal;
-	node.value = value;
+	node.text = text;
 
 	return node;
 }
@@ -206,15 +206,15 @@ new_binary_operator_node :: ( op: Binary_Op, left: *Ast_Node, right: *Ast_Node )
 	return node;
 }
 
-new_command_node :: ( command: Command, subcommand: Subcommand, args: [] *Ast_Node ) -> ( node: *Command_Node ) {
+new_command_node :: ( command: Command, config: Config, args: [] *Ast_Node ) -> ( node: *Command_Node ) {
 
 	node: *Command_Node = talloc( size_of(Command_Node) );
 	assert( node != null );
 
-	node.kind    	= .Command;
-	node.command 	= command;
-	node.subcommand = subcommand;
-	node.args       = args;
+	node.kind     = .Command;
+	node.command  = command;
+	node.config   = config;
+	node.args     = args;
 
 	return node;
 

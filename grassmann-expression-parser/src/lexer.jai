@@ -56,6 +56,12 @@ lexer_generate_tokens :: ( lexer: *Lexer, one_element_symbols: [] string ) {
 			break;
 		}
 
+		if begins_literal( c0 ) {
+			token = compose_literal( lexer );
+			add_token( lexer, token );
+			continue;
+		}
+
 		if begins_identifier( c0 ) {
 			token = compose_identifier_keyword_or_basis_symbol_token( lexer, one_element_symbols );
 			add_token( lexer, token );
@@ -187,20 +193,24 @@ print_tokens :: ( lexer: *Lexer, header: string ) {
 		if token.type == {
 			case .Error;              		{ print( "ERROR\n" ); }
 			case .End_Of_Input;       		{ print( "END_OF_INPUT\n" ); }
+			case .Identifier; 		  	  	{ print( "Token == %\n", token.identifier ); }
+			case .Basis_Element;          	{ print( "Basis elements %\n", token.basis ); }
+			case .Literal;					{ print( "Literal %\n", token.text ); }
+			case .Number;     		  		{ print( "Token == %\n", token.number ); }
+
+			case .Keyword_Get;				{ print( "KEYWORD_GET\n" ); }
+			case .Keyword_Set;				{ print( "KEYWORD_SET\n" ); }
+			case .Keyword_Exit;				{ print( "KEYWORD_EXIT\n" ); }
+			case .Keyword_Dimension;      	{ print( "KEYWORD_DIMENSION\n" ); }
+			case .Keyword_Basis; 			{ print( "KEYWORD_BASIS\n" ); }
+
 			case .Semicolon; 		  		{ print( "SEMICOLON\n" );  }
 			case .Open_Paren;         		{ print( "OPEN_PAREN\n" ); }
 			case .Close_Paren; 		  		{ print( "CLOSE_PAREN\n" );}
 			case .Open_Square_Brace;  	  	{ print( "OPEN_SQUARE_BRACE\n" ); }
 			case .Close_Square_Brace; 	  	{ print( "CLOSE_SQUARE_BRACE\n" ); }
 			case .Comma;			  	  	{ print( "COMMA\n" ); }
-			case .Identifier; 		  	  	{ print( "Token == %\n", token.identifier ); }
-			case .Keyword_Get;				{ print( "KEYWORD_GET\n" ); }
-			case .Keyword_Set;				{ print( "KEYWORD_SET\n" ); }
-			case .Keyword_Exit;				{ print( "KEYWORD_EXIT\n" ); }
-			case .Keyword_Dimension;      	{ print( "KEYWORD_DIMENSION\n" ); }
-			case .Keyword_Basis; 			{ print( "KEYWORD_BASIS\n" ); }
-			case .Basis_Element;          	{ print( "Basis elements %\n", token.basis ); }
-			case .Number;     		  		{ print( "Token == %\n", token.number ); }
+
 			case .Plus; 		 	  		{ print( "PLUS\n"  ); }
 			case .Minus;      		  		{ print( "MINUS\n" ); }
 			case .Assign;             		{ print( "ASSIGN\n" ); }
@@ -244,6 +254,59 @@ consume_character :: inline ( lexer: *Lexer ) {
 
 	lexer.input_cursor 			  += 1;
 	lexer.current_character_index += 1;
+}
+
+begins_literal :: inline ( c: u8 ) -> ( yes_no: bool ) {
+	return c == #char "'";
+}
+
+compose_literal :: ( lexer: *Lexer ) -> ( token: Token ) {
+
+	continues_literal :: ( c: u8 ) -> ( yes_no: bool ) {
+		return c != #char "'";
+	}
+
+	success: bool;
+	c: u8;
+
+	// alias temporary buffer; copy literal (excluding quotes) into token
+	t: [] u8;
+	t.data  = lexer.temp_buffer.data;
+	t.count = 0;
+
+	// double check what happens if we don't quote the literal
+	// like 'something  and exclude the terminating '
+	consume_character( lexer ); // initial single quote
+	while true {
+		if t.count > Lexer.TEMP_BUFFER_LENGTH {
+			// consume the rest of the literal???
+			break;
+		}
+
+		success, c = peek_next_character( lexer );
+		if success && continues_literal( c ) {
+			t.data[t.count] = c;
+			t.count += 1;
+			consume_character( lexer );
+		}
+		else {
+			break;
+		}
+	}
+
+	if c == #char "'" {
+		consume_character( lexer );
+	}
+
+	assert ( t.count <= Lexer.TEMP_BUFFER_LENGTH );
+
+	token: Token;
+	token.type = .Literal;
+	token.text.data = talloc( t.count * size_of( u8 ) );
+	memcpy( token.text.data, t.data, t.count );
+	token.text.count = t.count;
+
+	return token;
 }
 
 begins_identifier :: inline ( c: u8 ) -> ( yes_no: bool ) {

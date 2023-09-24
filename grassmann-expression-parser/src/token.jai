@@ -15,25 +15,24 @@ Token_Type :: enum u8 {
 	End_Of_Input;
 	
 	Identifier;
+	Basis_Element;  // based on the currently declared set of basis symbols
+	Literal; 		// quoted values like 'foo' or 'bar'
+	Number;
 
 	// Keywords are parsed into separate categories.
 	// Those that are 'commands' and those that are 'configs'.
 	// Set sentinel values for start and end for each category to ease parsing.
 	
-	Start_Commands;	
-	  Keyword_Get;
-	  Keyword_Set;
-	  Keyword_Exit;
-	End_Commands;
+	Command_Start;	
+	Keyword_Get;
+	Keyword_Set;
+	Keyword_Exit;
+	Command_End;
 
-	Start_Configs;
-	  Keyword_Dimension;
-	  Keyword_Basis;
-	End_Configs;
-
-	Basis_Element;
-
-	Number;
+	Config_Start;
+	Keyword_Dimension;
+	Keyword_Basis;
+	Config_End;
 
 	// separators
 	Semicolon;
@@ -63,7 +62,8 @@ Token :: struct {
 
 	union {
 		identifier: string;
+		text:    	string; // literal's 'value'
 		number:     int;
-		basis: 		s64; // for basis-elements
+		basis: 		s64; 	// for basis-elements
 	}	
 }

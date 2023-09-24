@@ -81,6 +81,11 @@ lookup_symbol :: ( name: string, symbol_table: *Symbol_Table ) -> ( value: Multi
 	return value, success;
 }
 
+evaluate_command :: () {
+	print( "Doesn't do shit right now homie!\n" );
+	return;
+}
+
 evaluate :: ( node: *Ast_Node, env: *Environment, interp: *Interpreter ) {
 
 	// Possible root nodes:
