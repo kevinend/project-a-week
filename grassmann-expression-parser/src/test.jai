@@ -501,6 +501,18 @@ generate_basis_symbol :: ( element: int, grade: int, n: int, one_element_symbols
 main :: () {
 
 {
+	total: int = 0;
+	x: int = 4;
+
+	// this could work then
+	if x == {
+		case 4; { total += 4; } #through;
+		case 3; { total += 3; } #through;
+		case 2; { print( "Total == %\n", total ); }
+	}
+}
+
+{
 	Test :: enum {
 		first;
 

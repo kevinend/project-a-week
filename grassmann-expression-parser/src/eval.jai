@@ -18,14 +18,14 @@ Symbol_Table :: struct {
 	num_symbols: int;
 
 	names:  [MAX_NUM_SYMBOLS * SYMBOL_NAME_MAX_SIZE]   u8;
-	values: [MAX_NUM_SYMBOLS * MAX_NUM_BASIS_ELEMENTS] K_Element;
+	values: [MAX_NUM_SYMBOLS * Environment.MAX_NUM_BASIS_ELEMENTS] K_Element;
 }
 
 Interpreter :: struct {
 	is_initialized: 			bool;
-	stack: 		  	   			Stack(K_Element);  				     // used to execute grassmann products
-	multielement_builder: 		[MAX_NUM_BASIS_ELEMENTS] K_Element;  // temporary reusable buffer for generating multielements
-	num_terms_in_multielement:  int;           				   	     // number of terms in the multielement
+	stack: 		  	   			Stack(K_Element);  				     			 // used to execute grassmann products
+	multielement_builder: 		[Environment.MAX_NUM_BASIS_ELEMENTS] K_Element;  // temporary reusable buffer for generating multielements
+	num_terms_in_multielement:  int;           				   	     			 // number of terms in the multielement
 
 	using symbol_table: Symbol_Table;
 }
@@ -52,13 +52,13 @@ reset_interpreter :: ( interp: *Interpreter ) {
 		interp.stack = stack_init( 50, K_Element ); // TODO: make this reasonable
 		for i: 0..Symbol_Table.MAX_NUM_SYMBOLS-1 {
 			interp.symbols[i].name.data  = pointer_offset( base = *interp.symbol_table.names[0],  offset = (Symbol_Table.SYMBOL_NAME_MAX_SIZE * i) );
-			interp.symbols[i].value.data = pointer_offset( base = *interp.symbol_table.values[0], offset = (MAX_NUM_BASIS_ELEMENTS * size_of(K_Element) * i));
+			interp.symbols[i].value.data = pointer_offset( base = *interp.symbol_table.values[0], offset = (Environment.MAX_NUM_BASIS_ELEMENTS * size_of(K_Element) * i));
 		}
 		interp.is_initialized = true;
 	}
 
 	// should be memset!
-	for i: 0..MAX_NUM_BASIS_ELEMENTS-1 {
+	for i: 0..Environment.MAX_NUM_BASIS_ELEMENTS-1 {
 		interp.multielement_builder[i].coefficient =  0;
 		interp.multielement_builder[i].basis 	   = -1;
 	}
@@ -81,8 +81,60 @@ lookup_symbol :: ( name: string, symbol_table: *Symbol_Table ) -> ( value: Multi
 	return value, success;
 }
 
-evaluate_command :: () {
-	print( "Doesn't do shit right now homie!\n" );
+evaluate_command :: ( node: *Ast_Node, env: *Environment ) {
+
+	assert( node.kind == .Command );
+
+	cmd := cast(*Command_Node)node;
+	if cmd.command == .Get {
+		if cmd.config == {
+			case .Dimension; {
+				print( "Dimension = %\n", env.dimension );		
+			}
+			case .Basis; {
+				print( "One element symbols = [" );
+				i: int = 0;
+				while i < env.one_element_symbols.count-1 {
+					print( "%,", env.one_element_symbols[i] );
+					i += 1;
+				}
+				print( "%]\n", env.one_element_symbols[i] );
+			}
+		}
+	}
+	else 
+	if cmd.command == .Set {
+		if cmd.config == {
+			case .Dimension; {
+				arg := cast(*Literal_Node)cmd.args[0];
+				env.dimension = string_to_int(arg.text);
+				// this breaks everything and you need something to set the defaults
+				// clear the symbol table
+				// and a bunch of other stuff probably
+				// or is the dimension implicit in the setting of the basis symbols?
+				// might remove that entirely
+				// set basis and scalar symbols
+			}
+			case .Basis; {
+				for i: 0..cmd.args.count-1 {
+					arg  := cast(*Literal_Node)cmd.args[i];
+					text := arg.text;
+					one_element_symbol := env.one_element_symbols[i];
+
+
+					memcpy( one_element_symbol.data, text.data, text.count );
+					one_element_symbol.count = text.count;
+
+					// this would change the dimension as well
+				}
+			}
+		}
+	}
+	else
+	if cmd.command == .Exit {
+		quit = true;
+	}
+
 	return;
 }
 

@@ -1,7 +1,7 @@
 #scope_export
 
 PROMPT :: "> ";
-
+quit: bool = false;
 main :: () {
 
 	env: 	Environment;
@@ -14,7 +14,7 @@ main :: () {
 	environment_generate_basis_elements( *env );
 
 	user_input: string;
-	while true {
+	while !quit {
 		
 		reset_temporary_storage();
 
@@ -39,7 +39,7 @@ main :: () {
 		print_ast( parser.ast, "Ast:" );
 
 		if parser.ast.kind == .Command {
-			evaluate_command();
+			evaluate_command( parser.ast, *env );
 		}
 		else {
 			parser.ast = expand( parser.ast );
