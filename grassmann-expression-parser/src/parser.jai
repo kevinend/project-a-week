@@ -201,12 +201,13 @@ parse_command :: ( parser: *Parser ) -> ( node: *Ast_Node ) {
 			if config == .Keyword_Basis {
 				t = peek_token( parser );
 				if t.type != .Open_Square_Brace { 
-					// report parse error break command_loop; 
+					// report parse error 
+					break command_loop; 
 				}
 				consume_token( parser );
 			
 				t = peek_token( parser );
-				while (t.type != .Close_Square_Brace || t.type != .End_Of_Input) {
+				while true {
 					if t.type != .Literal { 
 						// report parse error; 
 						break command_loop;
@@ -216,18 +217,25 @@ parse_command :: ( parser: *Parser ) -> ( node: *Ast_Node ) {
 					array_add( *args, literal );
 					consume_token( parser );
 
+					
 					t = peek_token( parser );
-					if t.type != .Comma || t.type != .Close_Square_Brace { // will be right brace on the last literal in the list of arguments
+					if t.type == .Close_Square_Brace || t.type == .End_Of_Input {
+						// the token will be a closing square brace on the last literal in the list of arguments
+						break;
+					}
+					else if t.type != .Comma {
 						// report parse error
 						break command_loop;
 					}
+
 					consume_token( parser );
 
 					t = peek_token( parser );
 				}
 				
 				if t.type == .End_Of_Input { 
-					// report parse error; break command_loop;
+					// report parse error; 
+					break command_loop;
 				}
 
 				// found a closing square brace instead of the end of input token

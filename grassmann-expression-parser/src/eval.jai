@@ -59,8 +59,8 @@ reset_interpreter :: ( interp: *Interpreter ) {
 
 	// should be memset!
 	for i: 0..Environment.MAX_NUM_BASIS_ELEMENTS-1 {
-		interp.multielement_builder[i].coefficient =  0;
-		interp.multielement_builder[i].basis 	   = -1;
+		interp.multielement_builder[i].coefficient   =  0;
+		interp.multielement_builder[i].basis_element = null;
 	}
 
 	interp.num_terms_in_multielement = 0;
@@ -116,17 +116,44 @@ evaluate_command :: ( node: *Ast_Node, env: *Environment ) {
 				// set basis and scalar symbols
 			}
 			case .Basis; {
+				// TODO: Clean this up, this is really messy right now
+				// Both of these buffers are in temporary memory
+				// The real things need to be in the heap somewhere permanent
+				// This is also broken when i change symbols to x,y,z,w and I enter 'z' i get w
+				// so something isn't working quite right
+
+				dimension := cmd.args.count; // this command can change the dimension of the current execution context
+				arg0 := cast(*Literal_Node)cmd.args[0];
+				one_element_symbol_length: int = arg0.text.count;
+	
+				symbols := talloc( dimension * size_of(string) );
+				one_element_symbols: [] string;
+				one_element_symbols.data = symbols;
+				one_element_symbols.count = dimension;
+
+				buffer := cast(*u8)talloc( dimension * one_element_symbol_length );
+				cursor := buffer;
+
 				for i: 0..cmd.args.count-1 {
 					arg  := cast(*Literal_Node)cmd.args[i];
 					text := arg.text;
-					one_element_symbol := env.one_element_symbols[i];
+					if text.count != one_element_symbol_length {
+						print( "Error, all one element symbols must be the same length\n" );
+						return;
+					}
 
+					memcpy( cursor, text.data, text.count );
+					one_element_symbols[i].data  = cursor;
+					one_element_symbols[i].count = text.count;
 
-					memcpy( one_element_symbol.data, text.data, text.count );
-					one_element_symbol.count = text.count;
-
-					// this would change the dimension as well
+					cursor += text.count;
 				}
+
+				for i: 0..one_element_symbols.count-1 {
+					print( "SYMBOL == %\n", one_element_symbols[i] );
+				}
+
+				environment_update( env, dimension, one_element_symbols );
 			}
 		}
 	}
@@ -211,7 +238,7 @@ multielement_to_ast :: ( multielement: Multi_Element ) -> ( ast: *Ast_Node ) {
 
 	ast: *Ast_Node = null;
 	if multielement.count == 1 {
-		ast = new_k_element_node( coefficient = multielement[0].coefficient, multielement[0].basis );
+		ast = new_k_element_node( coefficient = multielement[0].coefficient, multielement[0].basis_element.basis );
 	}
 	else {
 		root := new_binary_operator_node( .Sum, null, null );
@@ -220,7 +247,7 @@ multielement_to_ast :: ( multielement: Multi_Element ) -> ( ast: *Ast_Node ) {
 		current := root;
 		while i < multielement.count-2 {
 			defer i += 1;
-			current.left = new_k_element_node( coefficient = multielement[i].coefficient, multielement[i].basis );
+			current.left = new_k_element_node( coefficient = multielement[i].coefficient, multielement[i].basis_element.basis );
 
 			next := new_binary_operator_node( .Sum, null, null );
 			current.right = next;
@@ -228,8 +255,8 @@ multielement_to_ast :: ( multielement: Multi_Element ) -> ( ast: *Ast_Node ) {
 		}
 
 		// the final sum needs handled outside the loop
-		current.left  = new_k_element_node( coefficient = multielement[i].coefficient,   multielement[i].basis );
-		current.right = new_k_element_node( coefficient = multielement[i+1].coefficient, multielement[i+1].basis );
+		current.left  = new_k_element_node( coefficient = multielement[i].coefficient,   multielement[i].basis_element.basis );
+		current.right = new_k_element_node( coefficient = multielement[i+1].coefficient, multielement[i+1].basis_element.basis );
 
 		ast = root;
 	}
@@ -245,25 +272,24 @@ multielement_to_expression :: ( multielement: Multi_Element, basis_elements: [] 
 	// When printing a grade 0 the coefficient will only be reflected
 
 	builder: String_Builder;
+
 	basis:       s64;
 	coefficient: string;
 
 	i := 0;
 	while i < multielement.count-1 {
-		basis       = multielement[i].basis;
 		coefficient = tprint( "%", multielement[i].coefficient );
 
 		append( *builder, coefficient );
-		append( *builder, basis_elements[basis].symbol );
+		append( *builder, multielement[i].basis_element.symbol );
 		append( *builder, " + " );
 
 		i += 1;
 	}
 
-	basis 		 = multielement[i].basis;
 	coefficient  = tprint( "%", multielement[i].coefficient );
 	append( *builder, coefficient );
-	append( *builder, basis_elements[basis].symbol );
+	append( *builder, multielement[i].basis_element.symbol );
 
 	expression: string = builder_to_string( *builder );
 
@@ -293,7 +319,7 @@ update_symbol :: ( name: string, value: Multi_Element, symbol_table: *Symbol_Tab
 		assert( i < Symbol_Table.MAX_NUM_SYMBOLS );
 		assert( name.count <= Symbol_Table.SYMBOL_NAME_MAX_SIZE );
 
-		memcpy( symbol_table.symbols[i].name.data,  name.data, name.count );
+		memcpy( symbol_table.symbols[i].name.data, name.data, name.count );
 		symbol_table.symbols[i].name.count = name.count;
 
 		memcpy( symbol_table.symbols[i].value.data, value.data, value.count * size_of (K_Element) );
@@ -453,10 +479,10 @@ build_multielement :: ( interp: *Interpreter, env: *Environment ) -> ( multielem
 	// sum the basis elements/collect terms 
 	while !stack_is_empty( *interp.stack ) {
 		element, success := stack_pop( *interp.stack );
-		i := env.basis_elements[element.basis].display_order;
+		multielement_index := env.basis_index_to_multielement_index[element.basis];
 
-		interp.multielement_builder[i].coefficient += element.coefficient;
-		interp.multielement_builder[i].basis        = element.basis;	
+		interp.multielement_builder[multielement_index].coefficient   += element.coefficient;
+		interp.multielement_builder[multielement_index].basis_element  = *env.basis_elements[multielement_index];
 	}
 
 	// filter/pack the multielement to only include non-empty indices
@@ -474,9 +500,9 @@ build_multielement :: ( interp: *Interpreter, env: *Environment ) -> ( multielem
 	}
 
 	if interp.num_terms_in_multielement == 0 { // result is zero
-		interp.multielement_builder[0].coefficient = 0;
-		interp.multielement_builder[0].basis       = 0;
-		interp.num_terms_in_multielement           = 1;
+		interp.multielement_builder[0].coefficient   = 0;
+		interp.multielement_builder[0].basis_element = *env.basis_elements[0]; // scalar/grade-0 basis element
+		interp.num_terms_in_multielement             = 1;
 	}
 
 	multielement.data  = interp.multielement_builder.data;

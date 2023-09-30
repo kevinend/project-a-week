@@ -1,5 +1,17 @@
 #scope_export
 
+// what will happen is you get a list of thingies
+// set basis = [e1,e2,e3,e4];
+// this gets parsed into a command
+// that command has a list of arguments, which are their own literal nodes
+//  so we get a count of the args (that is the implicit dimension)
+//  and we get the length of the first argument
+//  allocate space for the one elements
+//  copy each argument into that buffer
+//  then generate the basis elements
+//  update the basis element buffer
+//  and point that to the one element symbols
+
 PROMPT :: "> ";
 quit: bool = false;
 main :: () {
@@ -9,9 +21,7 @@ main :: () {
 	parser: Parser;
 	interp: Interpreter;
 
-	environment_set_dimension_and_n_element( *env, 4 );
-	environment_set_one_element_symbols( *env, string.["e1","e2","e3","e4"] );
-	environment_generate_basis_elements( *env );
+	environment_update( *env, dimension = 4, one_element_symbols = string.["e1","e2","e3","e4"] );
 
 	user_input: string;
 	while !quit {
@@ -21,13 +31,12 @@ main :: () {
 		print( "%", PROMPT );
 	
 		user_input = read_line();
-		if user_input == "exit\r\n" { break; } // replace this with an exit keyword
 
 		lexer_set_input_from_string( *lexer, user_input );
 		lexer_generate_tokens( *lexer, env.one_element_symbols );
 
 		if lexer_contains_no_tokens( *lexer ) { 
-		    print( "No input; Enter a valid Grassmann expression\n" );
+		    print( "No input; Enter a valid Grassmann expression or 'exit;' to quit\n" );
 			continue; 
 		}
 

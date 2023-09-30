@@ -412,22 +412,6 @@ recurse :: ( x: int )  {
 
 */
 
-// N = 4
-// 1-4=  4
-// 2-6= 12
-// 3-4= 12
-// 4-1=  4
-//   32 iterations
-// 4 * 15 = 60
-// gray codes 
-// 0, have to iterate over each of these
-// 1, 
-// 2, iterate through 2
-// 3 iterate through 4
-// 8 iterate through all 8
-// 14 iterations, though you need to go through the call and manage the memory
-// for this, but you do get the grades for free
-
 // so if we allocate a buffer of 16 bits
 // then we allocate the numbers 0 and 1
 // then we iterate through that list
@@ -499,6 +483,510 @@ generate_basis_symbol :: ( element: int, grade: int, n: int, one_element_symbols
 // then make a fixed buffer for the 
 
 main :: () {
+
+{
+
+	Basis_Element_Builder :: struct {
+		weight:     int;
+		grade:      int;
+		basis:      s64; // bits that point back to our bits-to-index table
+	}
+
+	pop_count :: ( x: int ) -> ( bit_count: int ) {
+
+		// Implementation from here: https://en.wikichip.org/wiki/population_count
+		bit_count: int = 0;
+		while x != 0 {
+			bit_count += 1;
+			x = x & (x-1);
+		}
+		
+		return bit_count;
+	}
+
+	calculate_weight :: ( element: s64, dimension: int, one_element_weights: [] int ) -> ( weight: int ) {
+
+		weight: int = 0;
+		for i: 0..dimension-1 {
+			if element & (1 << i) {
+				weight += one_element_weights[i];
+			}
+		}
+		return weight;	
+	}
+
+	sort :: ( list: [] Basis_Element_Builder ) {
+		// bubble sort
+		for _: 0..list.count-1 {
+			for i: 0..list.count-2 {
+				if list[i+1].grade < list[i].grade {
+					temp     := list[i];
+					list[i]   = list[i+1];
+					list[i+1] = temp;
+				}
+				else
+				if list[i+1].grade == list[i].grade && list[i+1].weight > list[i].weight {
+					temp     := list[i];
+					list[i]   = list[i+1];
+					list[i+1] = temp;
+				}
+			}
+		}
+
+		return;
+	}
+
+	generate_basis_symbol :: ( element: int, grade: int, dimension: int, one_element_symbols: [] string ) -> ( symbol: string ) {
+
+	builder: String_Builder;
+	num_processed_basis_one_elements: int = 0;
+
+	if grade == 0 {
+		// this might not be the correct play when printing one-elements
+		append( *builder, "1" );
+	}
+	else {
+		// Iterate through each bit and lookup the corresponding basis symbol supplied by the user
+		// This is slow when building the entire set of basis elements for the user however this code path
+		// is traversed maybe once or twice during a run of the application so willing to put up with this for now.
+		// Also if the dimension (N) starts creeping up then this gets even slower but it will for sure work, which
+		// was not guaranteed with the other approaches I took.
+		
+		for i: 0..dimension-1 {
+			if element & (1 << i) {
+				append( *builder, one_element_symbols[i] );
+				if num_processed_basis_one_elements < grade-1 { // in an expression like e1^e2 the number of exterior products is the grade-1
+					append( *builder, "^" );
+				}
+				num_processed_basis_one_elements += 1;
+			}
+		}
+	}
+
+	// TODO: Leaking memory!!!
+	symbol: string = builder_to_string( *builder );
+	return symbol;
+}
+
+
+	
+
+	elements: [4] s64 = .[1,2,4,8];
+	one_element_weights:  [4] s64 = .[8,4,2,1]; // want e1 to have higher weight, then e2 to have second heighest weighting factor
+	dimension := 4;
+
+	basis_element_weights: [16] int;
+
+	basis_elements: [16] Basis_Element_Builder;	
+	
+	basis_elements[0].grade  = 0;
+	basis_elements[0].basis  = 0;
+
+	for i: 1..15 {
+		grade  := pop_count( i );
+		weight := calculate_weight( i, dimension, one_element_weights );
+
+		basis_elements[i].weight = weight;
+		basis_elements[i].grade  = grade;
+		basis_elements[i].basis  = i;
+	}
+
+	// so we have a builder to build the symbols in the order we want
+	// Basis_Element_Builder (sort, iterate through the basis element, assign the grade and the symbol)
+	//                       (iterate through it again to build the mapping table)
+	// Basis_Element: grade, symbol
+	// Basis_Bits_To_Index table
+
+	for i: 0..basis_elements.count-1 {
+		print( "(Grade,Weight,Basis) == (%,%,%)\n", basis_elements[i].grade, basis_elements[i].weight, basis_elements[i].basis );
+	}
+	print( "\n\n" );
+	sort( basis_elements );
+	for i: 0..basis_elements.count-1 {
+		print( "(Grade,Weight,Basis) == (%,%,%)\n", basis_elements[i].grade, basis_elements[i].weight, basis_elements[i].basis );
+
+	}
+
+	// this mapped okay it looks like e1e2 is the 5 the element that needs displayed
+	// just type this into the code because you will forget
+	bits_to_index: [16] s64;
+	for i: 0..15 {
+		index := basis_elements[i].basis;
+		bits_to_index[index] = i;
+	}
+
+	// then iterate over the list again
+	// and build the symbols for the whatever and you have your order bro
+	// you want to do that symbol thing, where you allocate appropriate space for symbols or whatever
+	// need to handle that as well
+
+	print( "Bits to index == %\n", bits_to_index );
+
+	// there is your list of symbols!
+	for i: 0..15 {
+		symbol := generate_basis_symbol( basis_elements[i].basis, basis_elements[i].grade, 4, .["e1","e2","e3","e4"] );
+		print( "Symbol == %\n", symbol );
+	}
+
+	// we want to pack the strings
+	// what this means is create a buffer that holds all the string data
+ 
+	// [e1,e2,e3,e4,e1^e2...] packed together
+	// then our basis_elements array is an array of strings that point into that
+	// space but they each have a different length
+
+	// Why?
+	//  Lexer needs to determine what is a basis element, want the strings tight in memory for quicker comparisons
+	//  Final output uses it to, we don't cache symbols of a multielement so we have to lookup in here
+
+	// so if we say that one elements MUST be a consistent length
+	// then we know the length of a one element
+	//  one_element_symbol_length = 2;
+	// if we know the dimension then we know that we need elements of grade 1,2,3..up to N
+	// and we can figure the number of elements
+	// need to figure out the size of the buffer, the number of elements is based on the dimension
+	// it is a sum up to the dimension
+	// it could be a loop over the dimension
+/*
+	grade = 1;
+	num_basis_elements = dimension; // these are the one elements
+	total += num_basis_elements * (grade * one_element_symbol_length);
+
+	// handle grades larger than 1
+	for i: 1..dimension.count-1 {
+		grade := i;
+		num_basis_elements   = n_choose_k( dimension, grade );
+		basis_symbol_length  = (grade * one_element_symbol_length) + (grade-1); // grade-1 symbols
+		total += num_basis_elements * basis_symbol_length; 
+	}
+*/
+
+	// Basis_Symbol_Buffer {
+	//    data: u8;
+	//    unallocated_bytes: int;
+	//    allocated_bytes:   int;
+	// }
+	// pass in the Basis_Symbol_Buffer
+	// we pass in the grade, so we know how much to bump by
+	//  symbol_length = basis_symbols_lengths[grade]
+
+	// then you allocate that buffer
+	// then you loop through the basis elements
+	// number bytes allocated
+	// need a pointer to track where in that allocator we are
+
+
+	// then you can say, here is a pointer to the one elements in this list
+	// it is the buffer of the first symbol + the length of each symbol + the number of symbols
+
+	// in the order that you want, see it wasn't that hard. GROWTH MINDSET!
+	// i wanted to pack these and not have a separate set of strings pointing all over the place if we didn't need to
+
+}
+
+// basis_index_to_multielement_index
+
+	// basis to index 
+	// e1 = 1 
+	// e2 = 2
+	// e3 = 4
+	// e4 = 8
+	// e1e2 = 3 // however we want to render in the correct order
+	// so we have to map this to the 'expression_order'
+	//	[e1, e2, e1e2, e3, ... ]
+	//            --> needs to point to index 4
+	//  [e1,e2,e3,e4,e1e2]
+	// we do that with weighting and grades
+
+	// store the basis index in the table 
+	// then iterate through it to build the reverse lookup table from bits to index
+
+
+
+/*
+
+	1  e1
+	2  e2
+	3  e12
+	4  e3
+	5  e13
+	6  e23
+	7  e123
+	8  e4
+	9  e14
+	10
+	11
+	12
+	13
+	14
+	15
+*/
+
+	// so you build the data structure that puts everything in order
+	// it stores the grade, the symbol and the bits
+	// then we iterate through our table and update the records in the bit mapping table back to us
+
+	// grade, bits, symbol
+	// other table just stores the index, when we do a sum we point back to here
+	// that could work
+
+	// we do a popcount for the grade and the weight, then do the sort
+	//  e1 = 8
+	//  e2 = 4
+	//  e3 = 2
+	//  e4 = 1
+	//  e12 = 12
+	//  e13 = 10
+	//  e14 =  9
+	//  e23 =  6
+	//  e24 =  5 // these are the same 
+	//  e34 =  3
+	//  e123 = 14
+	//  e124 = 13
+	//  e134 = 11
+	//  e234 =  7
+	//  e1234 = 15
+
+	//  then you have the original list that needs to point to this new ordered list
+
+	// [bits] -->> [indices], have to build that mapping table
+
+
+	// e1 = 1
+	// e2 = 2
+	// e3 = 4
+	// e4 = 8
+	//  e12 = 3
+	//  e13 = 
+	//  e14 =  9
+	//  e23 =  6
+	//  e24 =  5 // these are the same 
+	//  e34 =  3
+	//  e123 = 14
+	//  e124 = 13
+	//  e134 = 11
+	//  e234 =  7
+	//  e1234 = 15
+
+	// if you sum these up can you multiply 
+
+/*
+	e1 = 1
+	e2 = 2
+	e3 = 3
+	e4 = 4
+	e1e2 = 3*2-1 = 5
+	e1e3 = 4*2-1 = 7
+	e1e4 = 5*2-1 = 9
+	e2e3 = 5*2-1 = 11
+	e2e4 = 
+	e2e3
+*/
+
+
+	// mod 4 
+	// mod 3 
+	// mod 2
+	// mod 1
+
+	// weights are lookups but then we don't have the mapping, we just have the order we want to display in
+	// 
+
+	// sort by grade and by weight
+	// if you build up the combinations
+
+/* fucking recursion
+
+	elements = 'e1,e2,e3,e4';
+	k = 2;
+	result = combinations( elements, 2 );
+
+	combinations
+	
+	e1e2e3
+	e1e2e4
+
+	e1 e2 e3 e4
+	e1 e2 e3 e4; e2 e3 then the queue would be reversed
+
+	e1 e2 e3 e4
+	e1 e2
+
+	e3
+	e4
+
+	e1 e2 e3 e4a
+
+	a 3 element list is a 2 element list + selecting 1 and a one element list is just the element and zero means you have the elements
+	
+	list of three elements, the smallest list of elements is a one element list, and you could return that
+
+*/
+
+
+{
+	/*
+
+	e1e2e3 e1e2e4  (need N-K) == (2), then the rest of the one elements
+	
+	e1e2e3 e1e2e4 // need to copy that pattern, they are like slices of the array
+	e1e3e4
+	e2e3e4
+
+	K-N slice from the front
+	how do you represent that programmatically dawg???
+
+	left, right
+	when do you adjust?
+
+	do you add the number of subsets for a given index?
+	something like e1, e2
+	then the subsets like e2e3, e2e4, e3e4
+
+	this is to build elements greater than n choose k where k < n and k > 2
+
+	basically swap which queue you need to use for the operations
+	 thinking about a double queue for this type of thing
+	 N = 2
+	 then you have a pointer to the 'active' queue
+	 queue1: e1 e2
+	 queue2: e2
+	  ops:
+	   D=e1
+	   if queue1.num_elements == k-1 {
+			D=e2
+			combine to build an element
+			add the dequeud element to queue2
+		if is_empty(queue1) {
+			active = queue2;
+		}
+		else
+		if is_empty(queue2) {
+			active = queue1
+		}
+
+		if active.num_elements == k { // able to build a k-element
+		else {
+			break;
+		}
+		// then you flip the active elements effectively
+	}
+
+	active:   *Queue;
+	inactive: *Queue;
+	queue1: fill with the one elements
+	queue2: e2 e3
+	active = queue1;
+	while true {
+		if active.num_elements < k {
+			// unable to build a k-element
+			break;			
+		}
+
+		while is_not_empty( active ) {
+			element = dequeue( active ); // e1
+			next    = dequeue( active ); // e2
+			i := 2;
+			while i 
+			enqueue( inactive, next );
+
+			build the element from eleme
+		}
+	}
+
+	// could use a round-robin queue, since we know we will have fewer elements, that is a lot of copying and pasting though brother, it would be cheaper just to peak but just try to get it to work
+		e1 e2 e3  dequeue several elements that you need and then re-queue them  e2, move this one down then dequeue and add them back to the queue e2 e3 e4, consume(e2), e3 e4 e3 e4
+	Build Grade 2:
+		Dequeue e1 --> anchor
+		Dequeue e2 --> next
+		Add e2 to inactive --> next_anchor
+		build e1e2
+		Dequeue e3
+		build e1e3
+		flip queue
+		e2 e3
+		build e2 e3
+		it is empty so break
+		got e1e2e3
+
+		e1 e2 e3 e4 e5
+		queue1: e3 e4 e5  e1e3, e1e4, e1e5
+		queue2: e2 e3
+
+		anchor: e1
+		while active queue is not empty { // as you build the three elements in the 5 space you end up with  e1 e2 e3 e4 e5; e4 e5 e3
+			next = dequeue( active );
+			enqueue( next );
+		}
+
+		e1 e2 e3
+		e1 e2 e4
+		e1 e2 e5
+		so it is n - (3) dequeue e1 e2 and combine those together, then iterate an element at a time
+		then add e2 to the element list
+
+		N - k = 2 that is the number of elements you have to grab up front
+
+		// DOES THIS STRUCTURE WORK EVERYWHERE????
+		N-K = 2  (3 elements in a 5 space), two elements + 1
+		e1 e2 e3 e4 e5
+		[    ] iterate through the rest of these
+		  [    ] iterate through the rest of these
+		       [   ] iterate through the rest of these
+
+		e1 e2 e3
+		e1 e2 e4
+		e1 e2 e5
+		e2 e3 e4
+		e2 e4 e5
+		e3 e4 e5
+
+		e1 e2 e3 e4
+		Grade2: (2 elements in a 4 space), 1 elements + 1
+		[e1] --> e1e2, e1e3, e1e4
+		  [e2]-->e2e3, e2e4
+		    [e3]-->e3e4
+		       [e4]-->nothing since you have a single element
+
+		Grade 3: (3 elements in a 4 space), 1 elements + 2 [MATCH WHAT YOU DID WITH THE 5 ELEMENTS]
+		e1 e2 e3 e4
+		e1e2e3
+		e1e3e4
+		e2e3e4
+		e1e2e4
+
+
+		// maybe the queueing the right approach
+
+		e1e2e3 e1e2e4; gosh seems like a stupid simple problem but my dumbass can't figure it out for some reason...FUCK!!!!
+		
+		
+
+		e1 e2 e3 e4
+		  [     ] e1e2e3
+		     [     ]e1e3e4
+		      [     ]e2e3e4 (now missing e1e2e4) hmmm...god damnit so close just need to figure out this one piece then all good
+	*/
+	
+
+}
+
+{
+	Basis :: union {
+		bits:  s64;
+		index: s64;
+	}
+
+	basis: Basis;
+	basis.bits = 1; // 1 2 which is 3 to an index
+	print( "Basis.index == %\n", basis.index ); // this indexes into the basis elements, basis_bits_to_index, you want the mapping to be straightforward
+	// but you would literally need them to index straight
+	// e1 e2 e3 e4  e1e2
+	// 1  2  3   4
+
+
+	
+}
 
 {
 	total: int = 0;
