@@ -55,11 +55,17 @@ K_Element :: struct {
 	coefficient:   int;
 	union {
 		basis: Basis_Element_Index;    // used for tree node/grassmann product operations
-		basis_element: *Basis_Element; // used in the multielement, points back to symbol for particular basis
+		basis_element: *Basis_Element; // used in the multielement, points back to the basis element which contains the grade and symbol
 	}
 }
 
 Multi_Element :: #type [] K_Element;
+
+Symbol_Buffer :: struct {
+	data:   *u8;
+	size:   int;
+	cursor: *u8;
+}
 
 Environment :: struct {
 	
@@ -72,8 +78,8 @@ Environment :: struct {
 
 	basis_index_to_multielement_index: [MAX_NUM_BASIS_ELEMENTS] Multi_Element_Index;
 
-	basis_symbol_buffer: 	  *u8;
-	basis_symbol_buffer_size: int;
+	basis_symbols:  Symbol_Buffer;
+	scalar_symbols: Symbol_Buffer;
 
 	basis_elements: [] Basis_Element; // basis elements are stored in 'multielement' order
 
@@ -102,165 +108,103 @@ environment_update :: ( env: *Environment, dimension: int, one_element_symbols: 
 		env.num_basis_elements = power( 2, env.dimension );
 	};
 
-	// set the one element symbol length
+	// set the one element symbol length; in the current implementation all one element symbols MUST be the same length
+	// this is asserted if the user issues a command to change the current set of basis one elements
 	{
-		// all one element symbols must be the same length!
 		env.one_element_symbol_length = one_element_symbols[0].count;
 	}
 
 	// generate the basis elements from the space using the list of user-supplied one element symbols
 	{
-		/*
-			This process is a little involved, but I wanted to maintain a consistent order for the final expression's multielement.
-			Weights are assigned to the basis one elements. A basis element's weight is the sumof the weights of all basis one elements contained in the element.
+		// generate the basis elements of grade k and add them to our environment
+		// symbols for the elements were initially added to the 'generate_basis_elements' but having the extra parameters
+		// decreased readability, update symbols separately.
 
-			For example, given the set of basis one elements [e1,e2,e3,e4] (with dimension 4) the output order of basis elements should be the following.
-				Multielement = e1 + e2 + e3 + e4 + e1^e2 + e1^e3 + e1^e4 + e2^e3 + e2^e4 + e3^e4 + e1^e2^e3 + e1^e2^e4 + e1^e3^e4 + e2^e3^e4 + e1^e1^e3^e4
-
-			We give a higher weight to the symbols we want to have precedence, so in this case e1 has a higher weight than e2 so it's terms will be ordered first.
-
-			You can't handle this lexigraphically since e1^e2^e3 would come before e2^3 which is not what we want.
-
-			There is one other wrinkle to this process. The basis one elements are bit-fields which eases the calculation of exterior, regressive, and interior
-			products along with left and right complements. However, the bit-field values do not play nice with this intended output order.
-
-			So to mitigate that we create a mapping table. So that you can take a basis one element like e4, with value 8 (2^3) and determine that in the output
-			order it should be at index 4.
-                         		 					 1 e1 e2  e1^e2 e3 ...             e4
-				basis_index_to_multielement_index: 	[0, 1, 2,   5,   3,   6,  8,  11,  4...]
-
-						  		  1 e1 e2 e3 e4 e1e2
-				multielement: 	[ 0  1  2  3  4  5  . .. ]
-
-			There may be a simpler way to accomplish this since it does require quite a few allocations and lots of loops but couldn't think of any other approach
-			so oh whale for now!
-		*/
-
-		
-
-		one_element_weights := NewArray( count = one_element_symbols.count, T = int, allocator = temp );
-
-		// Give the highest weight to to the first symbol, then next highest to the second symbol, etc...
-		for i: 0..one_element_weights.count-1 {
-			one_element_weights[i] = (1 << (one_element_weights.count-(i+1))); 
-		}
-
-		basis_element_weights := NewArray( count = env.num_basis_elements, T = int, allocator = temp );
-
-		builder := NewArray( count = env.num_basis_elements, T = Basis_Element_Builder, allocator = temp );
-		builder[0].weight = 0;
-		builder[0].grade  = 0;
-		builder[0].basis  = 0;
-
-		for i: 0..env.num_basis_elements-1 {
-			grade  := pop_count( i );
-			weight := calculate_basis_element_weight( i, dimension, one_element_weights );
-
-			builder[i].weight = weight;
-			builder[i].grade  = grade;
-			builder[i].basis  = i;
-		}
-
-		sort_by_grade_and_weight( builder );
-
-		// PERMANENT ALLOCATIONS:
-		// use the builder to update the mapping table from the basis element's index into it's location in the final multielement array
-		for i: 0..env.num_basis_elements-1 {
-			basis := builder[i].basis;
-			env.basis_index_to_multielement_index[basis] = i;
-		}
-
-		// allocate space to store all basis element symbols for the space of dimension N
-		env.basis_symbol_buffer_size = 0;
-		for i: 1..env.dimension {
-			
-			grade := i;
-
-			num_basis_elements_per_grade := choose( env.dimension, grade );
-			symbol_length := (grade * env.one_element_symbol_length) + (grade-1); // grade-1 to account for the number of ^ (wedge) symbols
-
-			env.basis_symbol_buffer_size += num_basis_elements_per_grade * symbol_length;
-		}
-
-		env.basis_symbol_buffer = alloc( env.basis_symbol_buffer_size * size_of(u8) );
-		assert( env.basis_symbol_buffer != null );
-
-		// create a new basis elements table that stores the grade and a reference to the basis element's symbol 
 		if env.basis_elements.data != null {
 			free( env.basis_elements.data );
-		}
-		env.basis_elements = NewArray( count = env.num_basis_elements, Basis_Element );
-
-		cursor := env.basis_symbol_buffer;
-		for i: 1..env.num_basis_elements-1 {
-			symbol := generate_basis_symbol( element = builder[i].basis, grade = builder[i].grade, one_element_symbols, cursor );
-			env.basis_elements[i].symbol = symbol;
-			env.basis_elements[i].grade  = builder[i].grade;
-			env.basis_elements[i].basis  = builder[i].basis;
-
-			cursor += symbol.count;
+			env.basis_elements.data = null;
+			env.basis_elements.count = 0;
 		}
 
-		// set the basis one element symbols for the environment to be used by the lexer
-		// not sure how to do this yet, man this is messy
+		basis_elements: [..] Basis_Element;
+		array_add( *basis_elements, Basis_Element.{ grade = 0, basis = 0 } );
+		for j: 1..env.dimension {
+			generate_basis_elements(
+				 i 		 	    	 = 0
+				,element 	    	 = Basis_Element.{ grade = 0, basis = 0 }
+				,n       	    	 = env.dimension
+				,k	     			 = j
+				,basis_elements 	 = *basis_elements
+			);
+		}
+		env.basis_elements = basis_elements;
 
-		// i'd like to point to just the buffer for the things
-		env.one_element_symbols = NewArray( count = env.dimension, string );
+		// generate the symbols for each of the basis elements (could do this as part of 'generate_basis_elements' but that procedure is fairly dense as is)
+		
+		// free the old basis element symbols buffer
+		if env.basis_symbols.data != null {
+			free( env.basis_symbols.data );
+			env.basis_symbols.data   = null;
+			env.basis_symbols.cursor = null;
+			env.basis_symbols.size   = 0;
+		}
+
+		// allocate space to store all basis element symbols for the space of dimension N 
+		for i: 1..env.dimension {	
+			grade := i;
+			num_exterior_product_symbols := grade-1;
+
+			basis_elements_per_grade    := choose( env.dimension, grade );
+			basis_element_symbol_length := (grade * env.one_element_symbol_length) + num_exterior_product_symbols; 
+
+			env.basis_symbols.size += (basis_elements_per_grade * basis_element_symbol_length);
+		}
+
+		env.basis_symbols.data   = alloc( env.basis_symbols.size * size_of(u8) );
+		env.basis_symbols.cursor = env.basis_symbols.data;
+		assert( env.basis_symbols.data != null );
+	
+		for i: 0..env.num_basis_elements-1 {
+			env.basis_elements[i].symbol = generate_basis_symbol( 
+				 element = env.basis_elements[i].basis 
+				,grade   = env.basis_elements[i].grade 
+				,one_element_symbols
+				,*env.basis_symbols
+			);
+		}
+	}
+
+	// update the environment's one-element symbols reference to point into the new one-element symbols in the basis symbol's buffer
+	// the one elements are tightly packed so the lexer can make the determination whether an identifier is a basis element (1-element) or not
+	{	
+		if env.one_element_symbols.data != null {
+			free( env.one_element_symbols.data );
+			env.one_element_symbols.data  = null;
+			env.one_element_symbols.count = 0; 
+		}
+
+		env.one_element_symbols.data  = alloc(  env.dimension * size_of(string) );
+		env.one_element_symbols.count = env.dimension;
+		assert( env.one_element_symbols.data != null );
+
 		for i: 0..env.dimension-1 {
-			env.one_element_symbols[i] = env.basis_elements[1+i].symbol;
-		}
-
-		print( "One element symbols\n" );
-	};
-
-	return;	
-}
-
-calculate_basis_element_weight :: ( element: s64, dimension: int, one_element_weights: [] int ) -> ( weight: int ) {
-
-	weight: int = 0;
-	for i: 0..dimension-1 {
-		if element & (1 << i) {
-			weight += one_element_weights[i];
+			env.one_element_symbols[i] = env.basis_elements[i+1].symbol; // +1 to skip over the grade 0 basis element
 		}
 	}
-	return weight;	
-}
 
-sort_by_grade_and_weight :: ( list: [] Basis_Element_Builder ) {
-	// bubble sort
-	for _: 0..list.count-1 {
-		for i: 0..list.count-2 {
-			if list[i+1].grade < list[i].grade {
-				temp     := list[i];
-				list[i]   = list[i+1];
-				list[i+1] = temp;
-			}
-			else
-			if list[i+1].grade == list[i].grade && list[i+1].weight > list[i].weight {
-				temp     := list[i];
-				list[i]   = list[i+1];
-				list[i+1] = temp;
-			}
+	// update the mapping table from an element's Basis_Element_Index to it's basis element in multielement order
+	{
+		for i: 0..env.num_basis_elements-1 {
+			index := env.basis_elements[i].basis;
+			env.basis_index_to_multielement_index[index] = i;
 		}
 	}
 
 	return;	
+
 }
 
 #scope_file
-
-Basis_Element_Builder :: struct {
-	weight: int;
-	grade:  int;
-	basis:  Basis_Element_Index;
-}
-
-choose :: (n: int, k: int) -> (value: int) {
-	// example: choose(4,2) == (4*3)/(2*1) == 6
-    if k == 0 return 1;
-    return (n * choose(n-1, k-1)) / k;
-}
 
 power :: ( a: int, b: int ) -> ( c: int ) {
 	
@@ -272,6 +216,47 @@ power :: ( a: int, b: int ) -> ( c: int ) {
 	return c;
 }
 
+choose :: (n: int, k: int) -> (value: int) {
+	// example: choose(4,2) == (4*3)/(2*1) == 6
+    if k == 0 return 1;
+    return (n * choose(n-1, k-1)) / k;
+}
+
+generate_basis_elements :: ( 
+	 i: int
+	,element: Basis_Element
+	,n: int
+	,k: int
+	,basis_elements: *[..] Basis_Element
+) {
+	
+	// This is a modified version of n choose k, where for each element in our one-elements we generate the combinations
+	// with the element and the combinations without the element. The caller invokes this for k = 1..N so we end up
+	// with each basis element in our collection in order of grade. Also, the one elements themselves are NOT supplied
+	// as part of the call. Each one element is a bit field (1 << i) so when we bump i by one we are effectively dealing with
+	// the next one element.
+
+	if element.grade == k {
+		// found a basis element of grade k, add to our collection of basis elements
+		// the element.basis is filled in during execution of the procedure
+		array_add( basis_elements, element );
+		return;
+	}
+
+	if i >= n {
+		// reached the end of the one elements without generating an element of grade k
+		return;
+	}
+
+	// include the current one element (represented as 2^i so just a bit-shift) and find the basis-elements with this one-element and do the same excluding this current one-element
+	include_first := Basis_Element.{ grade = element.grade + 1, basis = element.basis | (1 << i) }; 
+	exclude_first := Basis_Element.{ grade = element.grade    , basis = element.basis };
+
+	generate_basis_elements( i+1, include_first, n, k, basis_elements );
+	generate_basis_elements( i+1, exclude_first, n, k, basis_elements );
+}
+
+// shouldn't need pop count
 pop_count :: ( x: int ) -> ( bit_count: int ) {
 
 	// Implementation from here: https://en.wikichip.org/wiki/population_count
@@ -284,24 +269,22 @@ pop_count :: ( x: int ) -> ( bit_count: int ) {
 	return bit_count;
 }
 
-generate_basis_symbol :: ( element: int, grade: int, one_element_symbols: [] string, cursor: *u8 ) -> ( symbol: string ) {
+generate_basis_symbol :: ( element: int, grade: int, one_element_symbols: [] string, basis_symbols: *Symbol_Buffer ) -> ( symbol: string ) {
 
 	symbol: string;
 	
 	wedge := "^";
-	symbol.data = cursor;
+	symbol.data = basis_symbols.cursor;
 	if grade == 0 {
 		// this might not be the correct play when printing one-elements
 		s := "1";
-		memcpy( cursor, s.data, s.count );
+		memcpy( basis_symbols.cursor, s.data, s.count );
+		basis_symbols.cursor += s.count;
 		symbol.count = s.count;
 	}
 	else {
-		// Iterate through each bit and lookup the corresponding basis symbol supplied by the user
-		// This is slow when building the entire set of basis elements for the user however this code path
-		// is traversed maybe once or twice during a run of the application so willing to put up with this for now.
-		// Also if the dimension (N) starts creeping up then this gets even slower but it will for sure work, which
-		// was not guaranteed with the other approaches I took.
+		// Iterate through each bit and lookup the corresponding one element symbol and concat that into our symbol buffer.
+		// Each basis element's .symbol field will point to a sub-section of the flat array of memory used by the basis symbols buffer.
 
 		i := 0;
 		num_processed_basis_one_elements: int = 0;
@@ -310,16 +293,17 @@ generate_basis_symbol :: ( element: int, grade: int, one_element_symbols: [] str
 				if num_processed_basis_one_elements == grade-1 {
 					break;	
 				}	
-				memcpy( cursor, one_element_symbols[i].data, one_element_symbols[i].count );
-				cursor += one_element_symbols[i].count;
-				memcpy( cursor, wedge.data, wedge.count );
-				cursor += wedge.count;
+				memcpy( basis_symbols.cursor, one_element_symbols[i].data, one_element_symbols[i].count );
+				basis_symbols.cursor += one_element_symbols[i].count;
+				memcpy( basis_symbols.cursor, wedge.data, wedge.count );
+				basis_symbols.cursor += wedge.count;
 				num_processed_basis_one_elements += 1;
 			}
 			
 			i += 1;
 		}
-		memcpy( cursor, one_element_symbols[i].data, one_element_symbols[i].count );
+		memcpy( basis_symbols.cursor, one_element_symbols[i].data, one_element_symbols[i].count );
+		basis_symbols.cursor += one_element_symbols[i].count;
 
 		symbol.count = (grade * one_element_symbols[i].count) + (grade-1);
 	}

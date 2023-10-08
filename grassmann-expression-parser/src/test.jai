@@ -412,6 +412,22 @@ recurse :: ( x: int )  {
 
 */
 
+// N = 4
+// 1-4=  4
+// 2-6= 12
+// 3-4= 12
+// 4-1=  4
+//   32 iterations
+// 4 * 15 = 60
+// gray codes 
+// 0, have to iterate over each of these
+// 1, 
+// 2, iterate through 2
+// 3 iterate through 4
+// 8 iterate through all 8
+// 14 iterations, though you need to go through the call and manage the memory
+// for this, but you do get the grades for free
+
 // so if we allocate a buffer of 16 bits
 // then we allocate the numbers 0 and 1
 // then we iterate through that list
@@ -485,6 +501,64 @@ generate_basis_symbol :: ( element: int, grade: int, n: int, one_element_symbols
 main :: () {
 
 {
+	combination :: ( values: [] int, i: int, grade: int, element: int, n: int, k: int, output: *[..] int ) {
+		
+		if grade == k {
+			array_add( output, element );
+			return;
+		}
+
+		if i >= n {
+			// combination never reached k and we ran out of elements, just return
+			return;
+		}
+
+		include_first := element | (1 << i); // values[i];
+		exclude_first := element;
+
+		combination( values, i+1, grade+1, include_first, n, k, output );
+		combination( values, i+1, grade,   exclude_first, n, k, output );
+	}
+
+	// set the basis elements [] Basis_Elements
+	// allow that to be built into memory
+	// then you can free and it just goes away
+
+	values: [4] int = .[1,2,4,8];
+	output: [..] int;
+	n: int = 4;
+	k: int = 1;
+
+	// 
+	// basis_element.grade  = grade;
+	// basis_element.basis  = basis
+	// basis_element.symbol --> could probably generate the symbol the symbol, pass in the grade so assign the grade
+	// 
+	//
+	// we allocate the symbol buffer first then generate the symbol in here
+	// generate_basis_elements
+	//	 // this is n choose k with some additions to update the grade, and the basis symbol using our buffer
+	// gosh this will be WAAY cleaner than before
+
+	// allocate space for symbols
+	// generate the basis elements, symbol, basis, and grade
+	// create mappping record back and forth
+	// set access to basis one symbols
+	//
+	// no more intermediate values with weights and iterating like 10 gd times
+	// 
+
+	combination( values, 0, 0, 0, n, 1, *output );
+	combination( values, 0, 0, 0, n, 2, *output );
+	combination( values, 0, 0, 0, n, 3, *output );
+	combination( values, 0, 0, 0, n, 4, *output );
+
+
+
+	print( "Output == %\n", output );
+}
+
+{
 
 	Basis_Element_Builder :: struct {
 		weight:     int;
@@ -536,38 +610,6 @@ main :: () {
 		return;
 	}
 
-	generate_basis_symbol :: ( element: int, grade: int, dimension: int, one_element_symbols: [] string ) -> ( symbol: string ) {
-
-	builder: String_Builder;
-	num_processed_basis_one_elements: int = 0;
-
-	if grade == 0 {
-		// this might not be the correct play when printing one-elements
-		append( *builder, "1" );
-	}
-	else {
-		// Iterate through each bit and lookup the corresponding basis symbol supplied by the user
-		// This is slow when building the entire set of basis elements for the user however this code path
-		// is traversed maybe once or twice during a run of the application so willing to put up with this for now.
-		// Also if the dimension (N) starts creeping up then this gets even slower but it will for sure work, which
-		// was not guaranteed with the other approaches I took.
-		
-		for i: 0..dimension-1 {
-			if element & (1 << i) {
-				append( *builder, one_element_symbols[i] );
-				if num_processed_basis_one_elements < grade-1 { // in an expression like e1^e2 the number of exterior products is the grade-1
-					append( *builder, "^" );
-				}
-				num_processed_basis_one_elements += 1;
-			}
-		}
-	}
-
-	// TODO: Leaking memory!!!
-	symbol: string = builder_to_string( *builder );
-	return symbol;
-}
-
 
 	
 
@@ -607,6 +649,9 @@ main :: () {
 
 	}
 
+	// hmm i think i had this right in principal but something got mixed up in practice here
+	//
+
 	// this mapped okay it looks like e1e2 is the 5 the element that needs displayed
 	// just type this into the code because you will forget
 	bits_to_index: [16] s64;
@@ -622,69 +667,7 @@ main :: () {
 
 	print( "Bits to index == %\n", bits_to_index );
 
-	// there is your list of symbols!
-	for i: 0..15 {
-		symbol := generate_basis_symbol( basis_elements[i].basis, basis_elements[i].grade, 4, .["e1","e2","e3","e4"] );
-		print( "Symbol == %\n", symbol );
-	}
-
-	// we want to pack the strings
-	// what this means is create a buffer that holds all the string data
- 
-	// [e1,e2,e3,e4,e1^e2...] packed together
-	// then our basis_elements array is an array of strings that point into that
-	// space but they each have a different length
-
-	// Why?
-	//  Lexer needs to determine what is a basis element, want the strings tight in memory for quicker comparisons
-	//  Final output uses it to, we don't cache symbols of a multielement so we have to lookup in here
-
-	// so if we say that one elements MUST be a consistent length
-	// then we know the length of a one element
-	//  one_element_symbol_length = 2;
-	// if we know the dimension then we know that we need elements of grade 1,2,3..up to N
-	// and we can figure the number of elements
-	// need to figure out the size of the buffer, the number of elements is based on the dimension
-	// it is a sum up to the dimension
-	// it could be a loop over the dimension
-/*
-	grade = 1;
-	num_basis_elements = dimension; // these are the one elements
-	total += num_basis_elements * (grade * one_element_symbol_length);
-
-	// handle grades larger than 1
-	for i: 1..dimension.count-1 {
-		grade := i;
-		num_basis_elements   = n_choose_k( dimension, grade );
-		basis_symbol_length  = (grade * one_element_symbol_length) + (grade-1); // grade-1 symbols
-		total += num_basis_elements * basis_symbol_length; 
-	}
-*/
-
-	// Basis_Symbol_Buffer {
-	//    data: u8;
-	//    unallocated_bytes: int;
-	//    allocated_bytes:   int;
-	// }
-	// pass in the Basis_Symbol_Buffer
-	// we pass in the grade, so we know how much to bump by
-	//  symbol_length = basis_symbols_lengths[grade]
-
-	// then you allocate that buffer
-	// then you loop through the basis elements
-	// number bytes allocated
-	// need a pointer to track where in that allocator we are
-
-
-	// then you can say, here is a pointer to the one elements in this list
-	// it is the buffer of the first symbol + the length of each symbol + the number of symbols
-
-	// in the order that you want, see it wasn't that hard. GROWTH MINDSET!
-	// i wanted to pack these and not have a separate set of strings pointing all over the place if we didn't need to
-
 }
-
-// basis_index_to_multielement_index
 
 	// basis to index 
 	// e1 = 1 
