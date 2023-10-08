@@ -5,8 +5,12 @@ Lexer :: struct {
 	MAX_NUM_TOKENS_PER_EXPRESSION :: 100;  // an expression is a single line of input
 	TEMP_BUFFER_LENGTH      	  ::  64; // dictates the size of identifiers and the number of digits in a number
 
-	current_line_number: 	 Line_Number     = 0;
-	current_character_index: Character_Index = 0;
+	current_line_number: 	 Line_Number      = 0;
+	current_character_index: Character_Index  = 0;
+
+	// starting position information captured for the current token only
+	token_starting_line_number:     Line_Number;
+	token_starting_character_index: Character_Index;
 
 	input: string;
 	input_cursor: int;
@@ -50,8 +54,10 @@ lexer_generate_tokens :: ( lexer: *Lexer, one_element_symbols: [] string ) {
 			success, c0 = peek_next_character( lexer );
 		}
 
+		next_token_start( lexer );
+
 		if !is_remaining_input( lexer ) {
-			token = compose_end_of_input_token();
+			token = compose_end_of_input_token( lexer );
 			add_token( lexer, token );
 			break;
 		}
@@ -79,54 +85,54 @@ lexer_generate_tokens :: ( lexer: *Lexer, one_element_symbols: [] string ) {
 			// separators
 			case #char ";"; { 
 				consume_character( lexer );
-				token = compose_separator_or_operator_token( .Semicolon );
+				token = compose_separator_or_operator_token( lexer, .Semicolon );
 				add_token( lexer, token );
 			}
 			case #char "("; {
 				consume_character( lexer );
-				token = compose_separator_or_operator_token( .Open_Paren );
+				token = compose_separator_or_operator_token( lexer, .Open_Paren );
 				add_token( lexer, token );
 			}
 			case #char ")"; {
 				consume_character( lexer );
-				token = compose_separator_or_operator_token( .Close_Paren );
+				token = compose_separator_or_operator_token( lexer, .Close_Paren );
 				add_token( lexer, token );
 			}
 			case #char "["; {
 				consume_character( lexer );
-				token = compose_separator_or_operator_token( .Open_Square_Brace );
+				token = compose_separator_or_operator_token( lexer, .Open_Square_Brace );
 				add_token( lexer, token );
 			}
 			case #char "]"; {
 				consume_character( lexer );
-				token = compose_separator_or_operator_token( .Close_Square_Brace );
+				token = compose_separator_or_operator_token( lexer, .Close_Square_Brace );
 				add_token( lexer, token );
 			}
 			case #char ","; {
 				consume_character( lexer );
-				token = compose_separator_or_operator_token( .Comma );
+				token = compose_separator_or_operator_token( lexer, .Comma );
 				add_token( lexer, token );
 			}
 
 			// operators
 			case #char "+"; { 
 				consume_character( lexer );
-				token = compose_separator_or_operator_token( .Plus );
+				token = compose_separator_or_operator_token( lexer, .Plus );
 				add_token( lexer, token );
 			}
 			case #char "-"; {
 				consume_character( lexer );
-				token = compose_separator_or_operator_token( .Minus );
+				token = compose_separator_or_operator_token( lexer, .Minus );
 				add_token( lexer, token );
 			}
 			case #char "="; {
 				consume_character( lexer );
-				token = compose_separator_or_operator_token( .Assign );
+				token = compose_separator_or_operator_token( lexer, .Assign );
 				add_token( lexer, token );
 			}
 			case #char "^"; { 
 				consume_character( lexer );
-				token = compose_separator_or_operator_token( .Exterior_Product ); 
+				token = compose_separator_or_operator_token( lexer, .Exterior_Product ); 
 				add_token( lexer, token );
 			}
 			case #char "!"; {
@@ -137,14 +143,14 @@ lexer_generate_tokens :: ( lexer: *Lexer, one_element_symbols: [] string ) {
 				
 				if success && c1 == #char "^" {
 					consume_character( lexer );
-					token = compose_separator_or_operator_token( .Regressive_Product );
+					token = compose_separator_or_operator_token( lexer, .Regressive_Product );
 					add_token( lexer, token );
 				}
 				// error here? if !success there is nothing left in the input and that character isn't valid
 			}
 			case #char "@"; {
 				consume_character( lexer );
-				token = compose_separator_or_operator_token( .Interior_Product );
+				token = compose_separator_or_operator_token( lexer, .Interior_Product );
 				add_token( lexer, token );
 			}
 			case #char "<"; {
@@ -155,7 +161,7 @@ lexer_generate_tokens :: ( lexer: *Lexer, one_element_symbols: [] string ) {
 
 				if success && c1 == #char "<" {
 					consume_character( lexer );
-					token = compose_separator_or_operator_token( .Left_Complement );
+					token = compose_separator_or_operator_token( lexer, .Left_Complement );
 					add_token( lexer, token );
 				}
 				// error here?  if !success then there isn't another character and there should be
@@ -168,7 +174,7 @@ lexer_generate_tokens :: ( lexer: *Lexer, one_element_symbols: [] string ) {
 
 				if success && c1 == #char ">" {
 					consume_character( lexer );
-					token = compose_separator_or_operator_token( .Right_Complement );
+					token = compose_separator_or_operator_token( lexer, .Right_Complement );
 					add_token( lexer, token );
 				}
 				// error here? if !success then there isn't another character and there should be
@@ -191,36 +197,38 @@ print_tokens :: ( lexer: *Lexer, header: string ) {
 	for i: 0..lexer.num_tokens-1 {
 		token := lexer.tokens[i];
 		if token.type == {
-			case .Error;              		{ print( "ERROR\n" ); }
-			case .End_Of_Input;       		{ print( "END_OF_INPUT\n" ); }
-			case .Identifier; 		  	  	{ print( "Token == %\n", token.identifier ); }
-			case .Basis_Element;          	{ print( "Basis elements %\n", token.basis ); }
-			case .Literal;					{ print( "Literal %\n", token.text ); }
-			case .Number;     		  		{ print( "Token == %\n", token.number ); }
+			case .Error;              		{ print( "ERROR" ); }
+			case .End_Of_Input;       		{ print( "END_OF_INPUT" ); }
+			case .Identifier; 		  	  	{ print( "Token == %", token.identifier ); }
+			case .Basis_Element;          	{ print( "Basis elements %", token.basis ); }
+			case .Literal;					{ print( "Literal %", token.text ); }
+			case .Number;     		  		{ print( "Token == %", token.number ); }
 
-			case .Keyword_Get;				{ print( "KEYWORD_GET\n" ); }
-			case .Keyword_Set;				{ print( "KEYWORD_SET\n" ); }
-			case .Keyword_Exit;				{ print( "KEYWORD_EXIT\n" ); }
-			case .Keyword_Dimension;      	{ print( "KEYWORD_DIMENSION\n" ); }
-			case .Keyword_Basis; 			{ print( "KEYWORD_BASIS\n" ); }
+			case .Keyword_Get;				{ print( "KEYWORD_GET" ); }
+			case .Keyword_Set;				{ print( "KEYWORD_SET" ); }
+			case .Keyword_Exit;				{ print( "KEYWORD_EXIT" ); }
+			case .Keyword_Dimension;      	{ print( "KEYWORD_DIMENSION" ); }
+			case .Keyword_Basis; 			{ print( "KEYWORD_BASIS" ); }
 
-			case .Semicolon; 		  		{ print( "SEMICOLON\n" );  }
-			case .Open_Paren;         		{ print( "OPEN_PAREN\n" ); }
-			case .Close_Paren; 		  		{ print( "CLOSE_PAREN\n" );}
-			case .Open_Square_Brace;  	  	{ print( "OPEN_SQUARE_BRACE\n" ); }
-			case .Close_Square_Brace; 	  	{ print( "CLOSE_SQUARE_BRACE\n" ); }
-			case .Comma;			  	  	{ print( "COMMA\n" ); }
+			case .Semicolon; 		  		{ print( "SEMICOLON" );  }
+			case .Open_Paren;         		{ print( "OPEN_PAREN" ); }
+			case .Close_Paren; 		  		{ print( "CLOSE_PAREN" );}
+			case .Open_Square_Brace;  	  	{ print( "OPEN_SQUARE_BRACE" ); }
+			case .Close_Square_Brace; 	  	{ print( "CLOSE_SQUARE_BRACE" ); }
+			case .Comma;			  	  	{ print( "COMMA" ); }
 
-			case .Plus; 		 	  		{ print( "PLUS\n"  ); }
-			case .Minus;      		  		{ print( "MINUS\n" ); }
-			case .Assign;             		{ print( "ASSIGN\n" ); }
-			case .Exterior_Product;   		{ print( "EXTERIOR\n" ); }
-			case .Regressive_Product; 		{ print( "REGRESSIVE\n" ); }
-			case .Interior_Product;   		{ print( "INTERIOR\n" ); }
-			case .Left_Complement;    		{ print( "LEFT COMPLEMENT\n" ); }
-			case .Right_Complement;   		{ print( "RIGHT COMPLEMENT\n" ); }
+			case .Plus; 		 	  		{ print( "PLUS"  ); }
+			case .Minus;      		  		{ print( "MINUS" ); }
+			case .Assign;             		{ print( "ASSIGN" ); }
+			case .Exterior_Product;   		{ print( "EXTERIOR" ); }
+			case .Regressive_Product; 		{ print( "REGRESSIVE" ); }
+			case .Interior_Product;   		{ print( "INTERIOR" ); }
+			case .Left_Complement;    		{ print( "LEFT COMPLEMENT" ); }
+			case .Right_Complement;   		{ print( "RIGHT COMPLEMENT" ); }
 		}
+		print( "(Line = %, Start = %, End = %\n", token.line_number, token.character_index.start, token.character_index.end );
 	}
+
 	print( "\n" );
 
 	return;
@@ -228,6 +236,23 @@ print_tokens :: ( lexer: *Lexer, header: string ) {
 
 
 #scope_file
+
+report_error :: ( lexer: *Lexer ) {
+
+}
+
+next_token_start :: inline ( lexer: *Lexer ) {
+	lexer.token_starting_line_number 	 = lexer.current_line_number;
+	lexer.token_starting_character_index = lexer.current_character_index;
+}
+
+update_token_character_indices_and_line_number :: inline ( lexer: *Lexer, token: *Token ) {
+
+	token.line_number           = lexer.token_starting_line_number;
+
+	token.character_index.start = lexer.token_starting_character_index;; 
+	token.character_index.end   = lexer.current_character_index-1;
+}
 
 is_remaining_input :: inline ( lexer: *Lexer ) -> ( remaining_characters: int ) {
 	return lexer.input.count - lexer.input_cursor;
@@ -306,6 +331,8 @@ compose_literal :: ( lexer: *Lexer ) -> ( token: Token ) {
 	memcpy( token.text.data, t.data, t.count );
 	token.text.count = t.count;
 
+	update_token_character_indices_and_line_number( lexer, *token );
+
 	return token;
 }
 
@@ -380,6 +407,7 @@ compose_identifier_keyword_or_basis_symbol_token :: ( lexer: *Lexer, basis_one_e
 	keyword_token_type := is_identifier_keyword( cast(string) t );
 	if keyword_token_type {
 		token.type = keyword_token_type;
+		update_token_character_indices_and_line_number( lexer, *token );
 		return token;
 	}
 
@@ -387,6 +415,7 @@ compose_identifier_keyword_or_basis_symbol_token :: ( lexer: *Lexer, basis_one_e
 	if basis_element_index >= 0 {
 		token.type  = .Basis_Element;
 		token.basis = (1 << basis_element_index);
+		update_token_character_indices_and_line_number( lexer, *token );
 		return token;
 	}
 
@@ -394,6 +423,8 @@ compose_identifier_keyword_or_basis_symbol_token :: ( lexer: *Lexer, basis_one_e
 	token.identifier.data = talloc( t.count * size_of(u8) );
 	memcpy( token.identifier.data, t.data, t.count );
 	token.identifier.count = t.count;
+
+	update_token_character_indices_and_line_number( lexer, *token );
 
 	return token;
 }
@@ -464,21 +495,30 @@ compose_number_token :: ( lexer: *Lexer ) -> ( token: Token ) {
 	token.type   = .Number;
 	token.number = accumulator;
 
+	update_token_character_indices_and_line_number( lexer, *token );
+
 	return token;
 }
 
-compose_separator_or_operator_token :: ( type: Token_Type ) -> ( token: Token ) {
+compose_separator_or_operator_token :: ( lexer: *Lexer, type: Token_Type ) -> ( token: Token ) {
 
 	token: Token;
 	token.type = type;
 
+	update_token_character_indices_and_line_number( lexer, *token );
+
 	return token;
 }
 
-compose_end_of_input_token :: () -> ( token: Token ) {
-	
+compose_end_of_input_token :: ( lexer: *Lexer ) -> ( token: Token ) {
+
 	token: Token;
 	token.type = .End_Of_Input;
+
+	// since we don't consume a character the ending index is before the start
+	// i don't think this is a problem but putting a note here in case it is!
+	update_token_character_indices_and_line_number( lexer, *token );
+
 	return token;
 }
 

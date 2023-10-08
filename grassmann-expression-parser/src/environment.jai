@@ -39,7 +39,7 @@
 
 	Unfortunately, the ordering is not derived directly from the 'Basis_Element_Index' used to represent each individual k-element in the space.
 	The environment builds a mapping table from the 'Basis_Element_Index' to the 'Multi_Element_Index' and is used during evaluation to put elements in the correct
-	order.
+	place.
 */
 
 Basis_Element_Index :: #type s64;
@@ -293,10 +293,13 @@ generate_basis_symbol :: ( element: int, grade: int, one_element_symbols: [] str
 				if num_processed_basis_one_elements == grade-1 {
 					break;	
 				}	
+
 				memcpy( basis_symbols.cursor, one_element_symbols[i].data, one_element_symbols[i].count );
 				basis_symbols.cursor += one_element_symbols[i].count;
+
 				memcpy( basis_symbols.cursor, wedge.data, wedge.count );
 				basis_symbols.cursor += wedge.count;
+
 				num_processed_basis_one_elements += 1;
 			}
 			

@@ -57,7 +57,7 @@ Token :: struct {
 	
 	type: Token_Type = .Error;
 
-	line_number: 	 Range(Line_Number);
+	line_number: 	 Line_Number;
 	character_index: Range(Character_Index);
 
 	union {
