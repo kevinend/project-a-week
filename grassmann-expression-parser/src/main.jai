@@ -35,6 +35,11 @@ main :: () {
 		lexer_set_input_from_string( *lexer, user_input );
 		lexer_generate_tokens( *lexer, env.one_element_symbols );
 
+		if lexer_reported_error( *lexer ) {
+			print( lexer.error_message );
+			continue;
+		}
+		else
 		if lexer_contains_no_tokens( *lexer ) { 
 		    print( "No input; Enter a valid Grassmann expression or 'exit;' to quit\n" );
 			continue; 

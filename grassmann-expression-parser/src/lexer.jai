@@ -19,6 +19,9 @@ Lexer :: struct {
 	num_tokens: int = 0;
 
 	temp_buffer: [TEMP_BUFFER_LENGTH] u8;
+
+	error_reported: bool = false;
+	error_message:  string; 
 }
 
 
@@ -40,13 +43,22 @@ lexer_generate_tokens :: ( lexer: *Lexer, one_element_symbols: [] string ) {
 		lexer.num_tokens = 0;
 	}
 
+	reset_error_status :: ( lexer: *Lexer ) {
+		lexer.error_reported = false;
+	}
+
 	c0: u8;
 	success: bool;
 	token: Token;
 
 	clear_tokens( lexer );
+	reset_error_status( lexer );
 
-	while true {  	
+	while true {
+
+		if lexer_reported_error( lexer ) {
+			break;
+		}
 	 	
 	 	success, c0 = peek_next_character( lexer );
 		while success && is_space( c0 ) { // is_space is from JAI library; Basic???
@@ -54,7 +66,7 @@ lexer_generate_tokens :: ( lexer: *Lexer, one_element_symbols: [] string ) {
 			success, c0 = peek_next_character( lexer );
 		}
 
-		next_token_start( lexer );
+		mark_start_of_token( lexer );
 
 		if !is_remaining_input( lexer ) {
 			token = compose_end_of_input_token( lexer );
@@ -78,115 +90,20 @@ lexer_generate_tokens :: ( lexer: *Lexer, one_element_symbols: [] string ) {
 			token = compose_number_token( lexer );
 			add_token( lexer, token );
 			continue;
-		} 
-
-		c1: u8;
-		if c0 == {
-			// separators
-			case #char ";"; { 
-				consume_character( lexer );
-				token = compose_separator_or_operator_token( lexer, .Semicolon );
-				add_token( lexer, token );
-			}
-			case #char "("; {
-				consume_character( lexer );
-				token = compose_separator_or_operator_token( lexer, .Open_Paren );
-				add_token( lexer, token );
-			}
-			case #char ")"; {
-				consume_character( lexer );
-				token = compose_separator_or_operator_token( lexer, .Close_Paren );
-				add_token( lexer, token );
-			}
-			case #char "["; {
-				consume_character( lexer );
-				token = compose_separator_or_operator_token( lexer, .Open_Square_Brace );
-				add_token( lexer, token );
-			}
-			case #char "]"; {
-				consume_character( lexer );
-				token = compose_separator_or_operator_token( lexer, .Close_Square_Brace );
-				add_token( lexer, token );
-			}
-			case #char ","; {
-				consume_character( lexer );
-				token = compose_separator_or_operator_token( lexer, .Comma );
-				add_token( lexer, token );
-			}
-
-			// operators
-			case #char "+"; { 
-				consume_character( lexer );
-				token = compose_separator_or_operator_token( lexer, .Plus );
-				add_token( lexer, token );
-			}
-			case #char "-"; {
-				consume_character( lexer );
-				token = compose_separator_or_operator_token( lexer, .Minus );
-				add_token( lexer, token );
-			}
-			case #char "="; {
-				consume_character( lexer );
-				token = compose_separator_or_operator_token( lexer, .Assign );
-				add_token( lexer, token );
-			}
-			case #char "^"; { 
-				consume_character( lexer );
-				token = compose_separator_or_operator_token( lexer, .Exterior_Product ); 
-				add_token( lexer, token );
-			}
-			case #char "!"; {
-				// !^ is the regressive product (as in 'not the exterior product)
-				consume_character( lexer );
-
-				success, c1 = peek_next_character( lexer );
-				
-				if success && c1 == #char "^" {
-					consume_character( lexer );
-					token = compose_separator_or_operator_token( lexer, .Regressive_Product );
-					add_token( lexer, token );
-				}
-				// error here? if !success there is nothing left in the input and that character isn't valid
-			}
-			case #char "@"; {
-				consume_character( lexer );
-				token = compose_separator_or_operator_token( lexer, .Interior_Product );
-				add_token( lexer, token );
-			}
-			case #char "<"; {
-				// <<  is the left complement for now
-				consume_character( lexer );
-
-				success, c1 = peek_next_character( lexer );
-
-				if success && c1 == #char "<" {
-					consume_character( lexer );
-					token = compose_separator_or_operator_token( lexer, .Left_Complement );
-					add_token( lexer, token );
-				}
-				// error here?  if !success then there isn't another character and there should be
-			}
-			case #char ">"; {
-				// >> is the right complement for now
-				consume_character( lexer );
-
-				success, c1 = peek_next_character( lexer );
-
-				if success && c1 == #char ">" {
-					consume_character( lexer );
-					token = compose_separator_or_operator_token( lexer, .Right_Complement );
-					add_token( lexer, token );
-				}
-				// error here? if !success then there isn't another character and there should be
-			}
 		}
+
+		token = compose_separator_or_operator_token( c0, lexer );
+		add_token( lexer, token );
 	}
 
 	return;	
 }
 
-lexer_contains_no_tokens :: ( lexer: *Lexer ) -> ( yes_no: bool ) {
+lexer_reported_error :: ( lexer: *Lexer ) -> ( yes_no: bool ) {
+	return lexer.error_reported;
+}
 
+lexer_contains_no_tokens :: ( lexer: *Lexer ) -> ( yes_no: bool ) {
 	return lexer.tokens[0].type == .End_Of_Input;
 }
 
@@ -234,14 +151,32 @@ print_tokens :: ( lexer: *Lexer, header: string ) {
 	return;
 }
 
-
 #scope_file
 
-report_error :: ( lexer: *Lexer ) {
+report_error :: ( lexer: *Lexer, message: string ) -> ( token: Token ) {
 
+	// Lexer errors are for unrecognized character sequences that we can't turn into tokens.
+	// Error messages are written to temporary storage, will be wiped on each iteration of the program.
+	default_message := tprint( "Lexing error occurred on line number %, character %\n", lexer.token_starting_line_number, lexer.token_starting_character_index );
+
+	error_message: string;
+	error_message.count = default_message.count + message.count;
+	error_message.data  = talloc( error_message.count );
+	assert( error_message.data != null );
+
+	memcpy( error_message.data, default_message.data, default_message.count );
+	memcpy( error_message.data + default_message.count, message.data, message.count );
+
+	lexer.error_reported = true;
+	lexer.error_message  = error_message;
+
+	token := Token.{ type = .Error };
+
+	return token;
 }
 
-next_token_start :: inline ( lexer: *Lexer ) {
+mark_start_of_token :: inline ( lexer: *Lexer ) {
+	
 	lexer.token_starting_line_number 	 = lexer.current_line_number;
 	lexer.token_starting_character_index = lexer.current_character_index;
 }
@@ -270,10 +205,7 @@ peek_next_character :: inline ( lexer: *Lexer ) -> (success: bool, c: u8) {
 
 consume_character :: inline ( lexer: *Lexer ) {
 
-	print( "(Line,Character) == (%,%)\n", lexer.current_line_number, lexer.current_character_index );
-	
 	if lexer.input[lexer.input_cursor] == #char "\n" {
-		print( "This is a newline\n" );
 		lexer.current_line_number += 1;	
 	}
 
@@ -283,6 +215,14 @@ consume_character :: inline ( lexer: *Lexer ) {
 
 begins_literal :: inline ( c: u8 ) -> ( yes_no: bool ) {
 	return c == #char "'";
+}
+
+error_token :: () -> ( token: Token ) {
+	
+	token: Token;
+	token.type = .Error;
+
+	return token;
 }
 
 compose_literal :: ( lexer: *Lexer ) -> ( token: Token ) {
@@ -299,13 +239,11 @@ compose_literal :: ( lexer: *Lexer ) -> ( token: Token ) {
 	t.data  = lexer.temp_buffer.data;
 	t.count = 0;
 
-	// double check what happens if we don't quote the literal
-	// like 'something  and exclude the terminating '
 	consume_character( lexer ); // initial single quote
 	while true {
 		if t.count > Lexer.TEMP_BUFFER_LENGTH {
-			// consume the rest of the literal???
-			break;
+			report_error( lexer, "The current literal exceeds the maximum allowed length.\n" );
+			return error_token();
 		}
 
 		success, c = peek_next_character( lexer );
@@ -322,8 +260,10 @@ compose_literal :: ( lexer: *Lexer ) -> ( token: Token ) {
 	if c == #char "'" {
 		consume_character( lexer );
 	}
-
-	assert ( t.count <= Lexer.TEMP_BUFFER_LENGTH );
+	else {
+		report_error( lexer, "Ending quote from literal is missing\n" );
+		return error_token();
+	}
 
 	token: Token;
 	token.type = .Literal;
@@ -384,8 +324,8 @@ compose_identifier_keyword_or_basis_symbol_token :: ( lexer: *Lexer, basis_one_e
 
 	while true {
 		if t.count > Lexer.TEMP_BUFFER_LENGTH {
-			// consume rest of the identifier???
-			break;
+			report_error( lexer, "Identifer exceeded maximum length" );
+			return error_token();
 		}
 
 		success, c = peek_next_character( lexer );
@@ -396,8 +336,6 @@ compose_identifier_keyword_or_basis_symbol_token :: ( lexer: *Lexer, basis_one_e
 		}
 		else { break; }
 	}
-
-	assert( t.count <= Lexer.TEMP_BUFFER_LENGTH );
 
 	// check if the identifier is a keyword or a basis element first otherwise it is an identifier
 
@@ -497,6 +435,113 @@ compose_number_token :: ( lexer: *Lexer ) -> ( token: Token ) {
 
 	update_token_character_indices_and_line_number( lexer, *token );
 
+	return token;
+}
+
+compose_separator_or_operator_token :: ( c0: u8, lexer: *Lexer ) -> ( token: Token ) {
+
+	token: Token;
+	if c0 == {
+		// separators
+		case #char ";"; { 
+			consume_character( lexer );
+			token.type = .Semicolon;
+		}
+		case #char "("; {
+			consume_character( lexer );
+			token.type = .Open_Paren;
+		}
+		case #char ")"; {
+			consume_character( lexer );
+			token.type = .Close_Paren;
+		}
+		case #char "["; {
+			consume_character( lexer );
+			token.type = .Open_Square_Brace;
+		}
+		case #char "]"; {
+			consume_character( lexer );
+			token.type = .Close_Square_Brace;
+		}
+		case #char ","; {
+			consume_character( lexer );
+			token.type = .Comma;
+		}
+
+		// operators
+		case #char "+"; { 
+			consume_character( lexer );
+			token.type = .Plus;
+		}
+		case #char "-"; {
+			consume_character( lexer );
+			token.type = .Minus;
+		}
+		case #char "="; {
+			consume_character( lexer );
+			token.type = .Assign;
+		}
+		case #char "^"; { 
+			consume_character( lexer );
+			token.type = .Exterior_Product;
+		}
+		case #char "!"; {
+			// !^ is the regressive product (as in 'not the exterior product)
+			consume_character( lexer );
+			
+			success, c1 := peek_next_character( lexer );
+				
+			if success && c1 == #char "^" {
+				consume_character( lexer );
+				token.type = .Regressive_Product;
+			}
+			else {
+				report_error( lexer, "Unrecognized character sequence, expected symbol ^ after symbol !\n" );
+				return error_token();
+
+			}
+		}
+		case #char "@"; {
+			consume_character( lexer );
+			token.type = .Interior_Product;
+		}
+		case #char "<"; {
+			// <<  is the left complement for now
+			consume_character( lexer );
+
+			success, c1 := peek_next_character( lexer );
+
+			if success && c1 == #char "<" {
+				consume_character( lexer );
+				token.type = .Left_Complement;
+			}
+			else {
+				report_error( lexer, "Unrecognized character sequence, expected symbol < after symbol <\n" );
+				return error_token();
+			}
+		}
+		case #char ">"; {
+			// >> is the right complement for now
+			consume_character( lexer );
+			
+			success, c1 := peek_next_character( lexer );
+
+			if success && c1 == #char ">" {
+				consume_character( lexer );
+				token.type = .Right_Complement;
+			}
+			else {
+				report_error( lexer, "Unrecognized character sequence, expected symbol > after symbol >\n" );
+				return error_token();
+			}
+		}
+		case; {
+			report_error( lexer, "Unrecognized operator or separator." );
+			return error_token();
+		}
+	}
+
+	update_token_character_indices_and_line_number( lexer, *token );
 	return token;
 }
 

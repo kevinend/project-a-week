@@ -501,6 +501,19 @@ generate_basis_symbol :: ( element: int, grade: int, n: int, one_element_symbols
 main :: () {
 
 {
+	value: int = 10;
+	s := tprint( "Hello from outer space, my value is %\n", value );
+	print( "%\n", s );
+	print( "Type is %\n", type_of(s) );
+
+	// so you can inject values
+	// i think in the lexer we want on error to flag that the lexer ran into an error
+	// and just be like 'hey unexpected character sequence"
+	// in the parser you say something more explicit like unexpected token following identifier blah
+	// which is the semantics vs the unrecognized symbols
+}
+
+{
 	combination :: ( values: [] int, i: int, grade: int, element: int, n: int, k: int, output: *[..] int ) {
 		
 		if grade == k {

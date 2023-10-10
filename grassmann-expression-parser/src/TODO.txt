@@ -7,9 +7,11 @@ LEXER:
 xx--Convert number to K-Element with basis = 0
 xx--How do we handle empty input in the buffer or zero tokens?
 xx--Pass the one element symbols from the environment instead of caching them in the lexer
---Not handling the case of line numbers and characters in the input
+xx--Not handling the case of line numbers and characters in the input
 --Error messages, add a 'error_detected' flag on the lexer and have that fill out a log
   You set the flag, log the message then report in main if you found an error
+  Need all the 'compose' functions to return an error token, so when we report an error we return an error token
+  that way we can return cleanly to the parent scope that will return back up from there
 
 PARSER:
 --Maybe need but it would be nice just to print the value, i guess we don't want to sub if it is just a raw token?
