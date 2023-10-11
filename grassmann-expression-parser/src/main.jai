@@ -33,10 +33,12 @@ main :: () {
 		user_input = read_line();
 
 		lexer_set_input_from_string( *lexer, user_input );
+		lexer_clear_prior_tokens( *lexer );
 		lexer_generate_tokens( *lexer, env.one_element_symbols );
 
 		if lexer_reported_error( *lexer ) {
 			print( lexer.error_message );
+			lexer_reset_error_status( *lexer );
 			continue;
 		}
 		else
@@ -49,6 +51,12 @@ main :: () {
 
 		parser_set_tokens( *parser, lexer.tokens, lexer.num_tokens );
 		parser_generate_ast( *parser, *interp.symbol_table );
+
+		if parser_reported_error( *parser ) {
+			print( parser.error_message );
+			parser_reset_error_status( *parser );
+			continue;
+		}
 
 		print_ast( parser.ast, "Ast:" );
 

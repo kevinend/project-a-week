@@ -35,25 +35,18 @@ lexer_set_input_from_string :: ( lexer: *Lexer, user_input: string ) {
 	return;
 }
 
+lexer_clear_prior_tokens :: ( lexer: *Lexer ) {
+
+	// Prior line's tokens get overwritten on every new input line.
+	lexer.num_tokens = 0;
+}
+
 lexer_generate_tokens :: ( lexer: *Lexer, one_element_symbols: [] string ) {
-
-	clear_tokens :: ( lexer: *Lexer ) {
-		// Prior line's tokens get overwritten on every new input line.
-		// This could change in the future!
-		lexer.num_tokens = 0;
-	}
-
-	reset_error_status :: ( lexer: *Lexer ) {
-		lexer.error_reported = false;
-	}
-
+	
 	c0: u8;
 	success: bool;
 	token: Token;
-
-	clear_tokens( lexer );
-	reset_error_status( lexer );
-
+	
 	while true {
 
 		if lexer_reported_error( lexer ) {
@@ -101,6 +94,10 @@ lexer_generate_tokens :: ( lexer: *Lexer, one_element_symbols: [] string ) {
 
 lexer_reported_error :: ( lexer: *Lexer ) -> ( yes_no: bool ) {
 	return lexer.error_reported;
+}
+
+lexer_reset_error_status :: ( lexer: *Lexer ) {
+	lexer.error_reported = false;
 }
 
 lexer_contains_no_tokens :: ( lexer: *Lexer ) -> ( yes_no: bool ) {
@@ -153,7 +150,7 @@ print_tokens :: ( lexer: *Lexer, header: string ) {
 
 #scope_file
 
-report_error :: ( lexer: *Lexer, message: string ) -> ( token: Token ) {
+report_error :: ( lexer: *Lexer, message: string ) {
 
 	// Lexer errors are for unrecognized character sequences that we can't turn into tokens.
 	// Error messages are written to temporary storage, will be wiped on each iteration of the program.
@@ -169,13 +166,9 @@ report_error :: ( lexer: *Lexer, message: string ) -> ( token: Token ) {
 
 	lexer.error_reported = true;
 	lexer.error_message  = error_message;
-
-	token := Token.{ type = .Error };
-
-	return token;
 }
 
-mark_start_of_token :: inline ( lexer: *Lexer ) {
+mark_start_of_token :: ( lexer: *Lexer ) {
 	
 	lexer.token_starting_line_number 	 = lexer.current_line_number;
 	lexer.token_starting_character_index = lexer.current_character_index;
@@ -400,8 +393,8 @@ compose_number_token :: ( lexer: *Lexer ) -> ( token: Token ) {
 
 	while true {
 		if t.count > Lexer.TEMP_BUFFER_LENGTH {
-			// consume the rest of the digits?
-			break;
+			report_error( lexer, "Number exceeded maximum length.\n" );
+			return error_token();
 		}
 
 		success, c = peek_next_character( lexer );
@@ -414,8 +407,6 @@ compose_number_token :: ( lexer: *Lexer ) -> ( token: Token ) {
 			break;
 		}
 	}
-
-	assert( t.count <= Lexer.TEMP_BUFFER_LENGTH );
 
 	// Pushed all the digits onto the temp buffer (converting from ascii to their integer values).
 	// Walk the temp buffer and digits and build final number.
@@ -536,7 +527,7 @@ compose_separator_or_operator_token :: ( c0: u8, lexer: *Lexer ) -> ( token: Tok
 			}
 		}
 		case; {
-			report_error( lexer, "Unrecognized operator or separator." );
+			report_error( lexer, "Unrecognized operator or separator.\n" );
 			return error_token();
 		}
 	}

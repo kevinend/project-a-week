@@ -2,6 +2,10 @@ MAIN:
 xx--Use Temporary allocator, free memory on every iteration of the loop
 xx--Allow free-form expressions, so just e1 ^ e1 should return the result to the console
 --Allow input to come from a file instead of stdin
+  (if you allow a file then you want to run the loop for each of the lines in the file)
+
+TESTS:
+-- we are changing things and can't check whether we broke the tests or not!
 
 LEXER:
 xx--Convert number to K-Element with basis = 0
@@ -9,17 +13,18 @@ xx--How do we handle empty input in the buffer or zero tokens?
 xx--Pass the one element symbols from the environment instead of caching them in the lexer
 xx--Not handling the case of line numbers and characters in the input
 --Error messages, add a 'error_detected' flag on the lexer and have that fill out a log
-  You set the flag, log the message then report in main if you found an error
-  Need all the 'compose' functions to return an error token, so when we report an error we return an error token
-  that way we can return cleanly to the parent scope that will return back up from there
 
 PARSER:
---Maybe need but it would be nice just to print the value, i guess we don't want to sub if it is just a raw token?
 --Handle keywords, kind of skipping over them for now
---Revisit the use of t0,t1,t2; are they too simplistic? is the code hard to follow?
+xx--Revisit the use of t0,t1,t2; are they too simplistic? is the code hard to follow? (nope, pretty clean to me)
 --Error messages
   Undeclared idenfitier, this error needs to propogate up or we need to return NULL
-  Or something like hte lexer where you flag
+  Or something like the lexer where you flag
+
+  There is another wrinkle and that is the valid nature while parsing
+  we could use a similar GOTO like syntax like we did for the commands
+  so we could check things like hey you are 3 +; and that isn't a valid expression
+  do you need to do another pass over for errors?
  
 EVAL:
 --Interior product, use regressive with comp of second arg

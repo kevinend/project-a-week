@@ -21,7 +21,8 @@ Parser :: struct {
 
 	ast: *Ast_Node;
 
-	error: string; // not capturing this at the moment!
+	error_reported: bool = false;
+	error_message:  string;
 }
 
 parser_set_tokens :: ( parser: *Parser, tokens: [] Token, num_tokens: int ) {
@@ -37,11 +38,10 @@ parser_set_tokens :: ( parser: *Parser, tokens: [] Token, num_tokens: int ) {
 
 parser_generate_ast :: ( parser: *Parser, symbol_table: *Symbol_Table ) {
 
-	t: Token;
 	root: *Ast_Node = null;
-	
-	t = peek_token( parser );
-	if t.type > .Command_Start && t.type < .Command_End {
+	t0: Token;	
+	t0 = peek_token( parser );
+	if t0.type > .Command_Start && t0.type < .Command_End {
 		root = parse_command( parser );
 	}
 	else {
@@ -49,6 +49,14 @@ parser_generate_ast :: ( parser: *Parser, symbol_table: *Symbol_Table ) {
 	}
 
 	parser.ast = root;
+}
+
+parser_reported_error :: ( parser: *Parser ) -> ( yes_no: bool ) {
+	return parser.error_reported;
+}
+
+parser_reset_error_status :: ( parser: *Parser ) {
+	parser.error_reported = false;
 }
 
 print_ast :: ( ast: *Ast_Node, header: string ) {
@@ -120,14 +128,30 @@ peek_token :: inline ( parser: *Parser, offset: int = 0 ) -> ( token: *Token ) {
 
 consume_token :: inline ( parser: *Parser ) {
 	parser.token_cursor += 1;
-	return;
 }
 
-// Do i want separate GET and SET nodes and EXIT node, or just a single COMMAND node?
+report_error :: ( parser: *Parser, message: string ) {
+
+	// Parser errors are syntax errors where the logical combination of tokens is not what our application expects.
+	// Error messages are written to temporary storage, will be wiped on each iteration of the program.
+	token := parser.tokens[parser.token_cursor];
+	default_message := tprint( "Parser error occurred on line number %, character %\n", token.line_number, token.character_index );
+
+	error_message: string;
+	error_message.count = default_message.count + message.count;
+	error_message.data  = talloc( error_message.count );
+	assert( error_message.data != null );
+
+	memcpy( error_message.data, default_message.data, default_message.count );
+	memcpy( error_message.data + default_message.count, message.data, message.count );
+
+	parser.error_reported = true;
+	parser.error_message  = error_message;
+}
 
 parse_command :: ( parser: *Parser ) -> ( node: *Ast_Node ) {
 
-	t: Token;
+	t0: Token;
 
 	command: Token_Type;
 	config:  Token_Type;
@@ -144,26 +168,26 @@ parse_command :: ( parser: *Parser ) -> ( node: *Ast_Node ) {
 
 	while command_loop := true {
 	
-		t = peek_token( parser );
-		if t.type < .Command_Start || t.type > .Command_End {
-			// report parse error
+		t0 = peek_token( parser );
+		if t0.type < .Command_Start || t0.type > .Command_End {
+			report_error( parser, "Unrecognized command.\n" );
 			break command_loop;
 		}
-		command = t.type;
+		command = t0.type;
 		consume_token( parser );
 
 		if command == .Keyword_Exit {
-			// hacky, this is the only command thus far that doesn't have a config or args following it
+			// Hack! This is the only command thus far that doesn't have a config or args following it
 			node = new_command_node( Command.Exit, 0, args );
 			break command_loop;
 		}
 
-		t = peek_token( parser );
-		if t.type < .Config_Start || t.type > .Config_End {
-			// report parse error
+		t0 = peek_token( parser );
+		if t0.type < .Config_Start || t0.type > .Config_End {
+			report_error( parser, "Unrecognized configuration following command.\n" );
 			break command_loop;
 		}
-		config = t.type;
+		config = t0.type;
 		consume_token( parser );
 
 		if command == .Keyword_Get {
@@ -179,62 +203,62 @@ parse_command :: ( parser: *Parser ) -> ( node: *Ast_Node ) {
 		else
 		if command == .Keyword_Set {
 			// all set commands require arguments so they are of the form 'set {config} = {args};'
-			t = peek_token( parser );
-			if t.type != .Assign {
-				// report parse error
+			t0 = peek_token( parser );
+			if t0.type != .Assign {
+				report_error( parser, "Syntax error, expected the assignment operator following the keyword set\n" );
 				break command_loop;
 			}
 			consume_token( parser );
 
 			if config == .Keyword_Dimension {
-				t = peek_token( parser );
-				if t.type != .Literal {
-					// report parse error
+				t0 = peek_token( parser );
+				if t0.type != .Literal {
+					report_error( parser, "Syntax error, expected a literal number following the command 'set dimension'\n" );
 					break command_loop;
 				}
-				array_add( *args, new_literal_node( t.text ) );  // janky, should be able to pass unquoted number in statement? hmm
+				array_add( *args, new_literal_node( t0.text ) );  // janky, should be able to pass unquoted number in statement? hmm
 				consume_token( parser );
 
 				node = new_command_node( Command.Set, Config.Dimension, args );
 			}
 			else
 			if config == .Keyword_Basis {
-				t = peek_token( parser );
-				if t.type != .Open_Square_Brace { 
-					// report parse error 
+				t0 = peek_token( parser );
+				if t0.type != .Open_Square_Brace { 
+					report_error( parser, "Syntax error, expected opening brace [ before command arguments\n" );
 					break command_loop; 
 				}
 				consume_token( parser );
 			
-				t = peek_token( parser );
+				t0 = peek_token( parser );
 				while true {
-					if t.type != .Literal { 
-						// report parse error; 
+					if t0.type != .Literal { 
+						report_error( parser, "Syntax error, commands arguments must be a literal value, example 'e1'\n" );
 						break command_loop;
 					}
 					
-					literal := new_literal_node( t.text );
+					literal := new_literal_node( t0.text );
 					array_add( *args, literal );
 					consume_token( parser );
 
 					
-					t = peek_token( parser );
-					if t.type == .Close_Square_Brace || t.type == .End_Of_Input {
+					t0 = peek_token( parser );
+					if t0.type == .Close_Square_Brace || t0.type == .End_Of_Input {
 						// the token will be a closing square brace on the last literal in the list of arguments
 						break;
 					}
-					else if t.type != .Comma {
-						// report parse error
+					else if t0.type != .Comma {
+						report_error( parser, "Syntax error, arguments must be separated by a comma, example ['e1','e2',...]\n" );
 						break command_loop;
 					}
 
 					consume_token( parser );
 
-					t = peek_token( parser );
+					t0 = peek_token( parser );
 				}
 				
-				if t.type == .End_Of_Input { 
-					// report parse error; 
+				if t0.type == .End_Of_Input { 
+					report_error( parser, "Syntax error, malformed command.\n" );
 					break command_loop;
 				}
 
@@ -248,11 +272,12 @@ parse_command :: ( parser: *Parser ) -> ( node: *Ast_Node ) {
 		break command_loop;
 	}
 
-	// all commands must end with a semicolon to be valid!
-	t = peek_token( parser );
-	if t.type != .Semicolon {
-		// report parse error
+	t0 = peek_token( parser );
+	if !parser.error_reported && t0.type != .Semicolon {
+		report_error( parser, "Syntax error, all commands must end with a semicolon\n" );
+		node = null;
 	}
+
 	consume_token( parser );
 
 	return node;	
@@ -271,37 +296,39 @@ parse_statement :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( node: *
 
 	t0: *Token;
 	t1: *Token;
-	t2: *Token;
-	success: bool;
 
-	node: *Ast_Node = null;
+	statement: *Ast_Node = null;
 
 	t0 = peek_token( parser );
 	t1 = peek_token( parser, offset = 1 );
 
-	if t0.type == .Identifier && t1.type == .Assign {
-		// assignment statement
-		consume_token( parser );
-		consume_token( parser );
-
-		left  := new_identifier_node( t0.identifier );
-		right := parse_expression( parser, symbol_table );
-
-		t2 = peek_token( parser );
-		if t2.type == .Semicolon {
-			consume_token( parser );
-			binary_op := new_binary_operator_node( .Assign, left, right );
-			node = binary_op;
+	if t1.type == .Assign {
+		if t0.type != .Identifier {
+			report_error( parser, "Syntax error, only identifiers can be specified on the left of an assignment operator\n" );
+			return null;
 		}
-		else {
-			print( "Parse error, expected a semicolon following an assignment statement\n" );
-		}
+
+		consume_token( parser ); // identifier
+		consume_token( parser ); // assignment
+
+		ident := new_identifier_node( t0.identifier );
+		expr  := parse_expression( parser, symbol_table );
+
+		assignment := new_binary_operator_node( .Assign, ident, expr );
+		statement = assignment;
 	}
 	else {
-		node = parse_expression( parser, symbol_table );
+		statement = parse_expression( parser, symbol_table );	
 	}
-	
-	return node;
+
+	t0 = peek_token( parser );
+	if !parser.error_reported && t0.type != .Semicolon {
+		report_error( parser, "Syntax error, all statements must end with a semicolon\n" );
+		return null;
+	}
+	consume_token( parser );
+
+	return statement;
 }
 
 parse_expression :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( node: *Ast_Node ) {
@@ -425,6 +452,12 @@ parse_exterior_factor :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( n
 		}
 	}
 
+	// TODO: 3 >> returns the correct result, unable to parse expression
+	//       3 >>; says that all statements have to end in a semicolon
+	//       3 >> +; also says that all statements must end with a semicolon, too tired to think this through
+	// good job on working on it at all though, really want to draw to the screen and apply all this stuff
+	// though, we are getting there kev, one day at a time!!!
+
 	t0 = peek_token( parser );
 	if t0.type == .Basis_Element {
 		consume_token( parser );
@@ -436,7 +469,8 @@ parse_exterior_factor :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( n
 		consume_token( parser );
 		value, success := lookup_symbol( t0.identifier, symbol_table );
 		if !success {
-			print( "Unresolved identifier %\n", t0.identifier );
+			report_error( parser, "Syntax error, unresolved identifier.\n" );
+			return null;
 		}
 		node = multielement_to_ast( value );
 	}
@@ -451,7 +485,8 @@ parse_exterior_factor :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( n
 			consume_token( parser );
 			value, success := lookup_symbol( t1.identifier, symbol_table );
 			if !success {
-				print( "Unresolved identifier %\n", t1.identifier );
+				report_error( parser, "Syntax error, unresolved identifier.\n" );
+				return null;
 			}
 			binary_op := new_binary_operator_node( .Exterior_Product, scalar, multielement_to_ast( value ) );
 
@@ -475,11 +510,13 @@ parse_exterior_factor :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( n
 			consume_token( parser );
 		}
 		else {
-			// report error, missing close paren on expression!
+			report_error( parser, "Syntax error, missing closing parenthesis in expression\n" );
+			return null;
 		}
 	}
 	else {
-		// report error, unable to parse expression!
+		report_error( parser, "Syntax error, unable to parse expression\n" );	
+		return null;
 	}
 
 	// iterate backwards over the set of unary operators

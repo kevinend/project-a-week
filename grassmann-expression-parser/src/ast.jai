@@ -1,27 +1,5 @@
 #scope_export
 
-// Keyword_Set, Keyword_Basis ASSIGN NUMBER;
-// Keyword_Get, Keyword_Dimension ASSIGN [ident, ident, ident, ident];
-// Keyword Keyword -- expected keyword blah or blah or blah
-// set basis = [x1,x2,x3,x4];
-
-// keywords can be in two different forms in all reality
-// Exit_Node --> 
-// set dimension = 4;
-// set basis symbols = ['x','y','z','w'];
-// exit
-// Command_Node 
-//   command    --> exit   set
-//   subcommand --> set    basis
-//   args       --> [] *AST_Nodes 
-//	
-// set basis = ['x','y','z','w'];
-// set dimension = 4;
-// get basis
-// get dimension
-// set dimension = 3;
-// set basis = [x,y,z];
-
 Node_Kind :: enum {
 	
 	K_Element; // support for 'origin' as basis, so no longer just k-vectors
