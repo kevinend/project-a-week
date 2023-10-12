@@ -1,16 +1,19 @@
 #scope_export
 
-// what will happen is you get a list of thingies
-// set basis = [e1,e2,e3,e4];
-// this gets parsed into a command
-// that command has a list of arguments, which are their own literal nodes
-//  so we get a count of the args (that is the implicit dimension)
-//  and we get the length of the first argument
-//  allocate space for the one elements
-//  copy each argument into that buffer
-//  then generate the basis elements
-//  update the basis element buffer
-//  and point that to the one element symbols
+
+/*
+	Application is a command-line (GUI coming) calculator for Grassmann expressions 
+	augmented with a symbol table to store intermediate calculations for use in
+	later expressions.
+
+	It also handles simple commands to change the current linear space's
+	dimension, so moving from G(R3) to G(R4) as an example, or changing
+	the basis elements of the space in case you don't like the defaults.
+
+	For explanation of notation and data layouts for the underlying space,
+	please see the file environment.jai.
+
+*/
 
 PROMPT :: "> ";
 quit: bool = false;
