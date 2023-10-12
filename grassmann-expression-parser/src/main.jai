@@ -40,8 +40,8 @@ main :: () {
 		lexer_generate_tokens( *lexer, env.one_element_symbols );
 
 		if lexer_reported_error( *lexer ) {
-			print( lexer.error_message );
-			lexer_reset_error_status( *lexer );
+			lexer_print_error_message( *lexer ); 
+			lexer_reset_error_status(  *lexer );
 			continue;
 		}
 		else
