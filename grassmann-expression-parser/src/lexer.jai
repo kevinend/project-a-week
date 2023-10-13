@@ -108,7 +108,7 @@ lexer_contains_no_tokens :: ( lexer: *Lexer ) -> ( yes_no: bool ) {
 	return lexer.tokens[0].type == .End_Of_Input;
 }
 
-print_tokens :: ( lexer: *Lexer, header: string ) {
+lexer_print_tokens :: ( lexer: *Lexer, header: string ) {
 	
 	print( "%\n", header );
 
@@ -117,10 +117,10 @@ print_tokens :: ( lexer: *Lexer, header: string ) {
 		if token.type == {
 			case .Error;              		{ print( "ERROR" ); }
 			case .End_Of_Input;       		{ print( "END_OF_INPUT" ); }
-			case .Identifier; 		  	  	{ print( "Token == %", token.identifier ); }
+			case .Identifier; 		  	  	{ print( "Identifier == %", token.identifier ); }
 			case .Basis_Element;          	{ print( "Basis elements %", token.basis ); }
 			case .Literal;					{ print( "Literal %", token.text ); }
-			case .Number;     		  		{ print( "Token == %", token.number ); }
+			case .Number;     		  		{ print( "Number == %", token.number ); }
 
 			case .Keyword_Get;				{ print( "KEYWORD_GET" ); }
 			case .Keyword_Set;				{ print( "KEYWORD_SET" ); }
@@ -397,8 +397,8 @@ compose_number_token :: ( lexer: *Lexer ) -> ( token: Token ) {
 
 	while true {
 		if t.count > Lexer.TEMP_BUFFER_LENGTH {
-			// consume the rest of the digits?
-			break;
+			report_error( lexer, "Maximum number of digits exceeded\n" );
+			return error_token();
 		}
 
 		success, c = peek_next_character( lexer );
@@ -411,8 +411,6 @@ compose_number_token :: ( lexer: *Lexer ) -> ( token: Token ) {
 			break;
 		}
 	}
-
-	assert( t.count <= Lexer.TEMP_BUFFER_LENGTH );
 
 	// Pushed all the digits onto the temp buffer (converting from ascii to their integer values).
 	// Walk the temp buffer and digits and build final number.

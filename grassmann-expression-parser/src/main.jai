@@ -50,7 +50,7 @@ main :: () {
 			continue; 
 		}
 
-		print_tokens( *lexer, "Tokens:" );
+		lexer_print_tokens( *lexer, "Tokens:" );
 
 		parser_set_tokens( *parser, lexer.tokens, lexer.num_tokens );
 		parser_generate_ast( *parser, *interp.symbol_table );
@@ -61,14 +61,14 @@ main :: () {
 			continue;
 		}
 
-		print_ast( parser.ast, "Ast:" );
+		parser_print_ast( parser.ast, "Ast:" );
 
 		if parser.ast.kind == .Command {
 			evaluate_command( parser.ast, *env );
 		}
 		else {
 			parser.ast = expand( parser.ast );
-			print_ast( parser.ast, "Post-Expand Ast:" );
+			parser_print_ast( parser.ast, "Post-Expand Ast:" );
 			evaluate( parser.ast, *env, *interp );
 			print_symbol_table( *interp.symbol_table, env.basis_elements );
 		}

@@ -17,14 +17,15 @@ xx--Not handling the case of line numbers and characters in the input
 PARSER:
 --Handle keywords, kind of skipping over them for now
 xx--Revisit the use of t0,t1,t2; are they too simplistic? is the code hard to follow? (nope, pretty clean to me)
---Error messages
-  Undeclared idenfitier, this error needs to propogate up or we need to return NULL
-  Or something like the lexer where you flag
+--ERROR HANDLING NEEDS REVISITED and thought out a lot better than it is now, it is janky and not helpful with simple mistakes.
+  I think i may need to add information to the lexer about the CLASS/CATEGORY something is
+  if !error && !next_factor {
+  	add the code to say that you didn't find a 	
+  }
 
-  There is another wrinkle and that is the valid nature while parsing
-  we could use a similar GOTO like syntax like we did for the commands
-  so we could check things like hey you are 3 +; and that isn't a valid expression
-  do you need to do another pass over for errors?
+  too tired, got the 3 +; and 3 ^; errors to report correctly if you have 3 <<; we aren't reporting an error like 'missing expression'
+  after unary operator since after we get three back we check for wedge, antiwedge, then plus or minus, maybe at the top-level if it doesn't
+  equal a semicolon we just report an error and check if it is a unary operator
  
 EVAL:
 --Interior product, use regressive with comp of second arg

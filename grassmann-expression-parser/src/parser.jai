@@ -59,7 +59,7 @@ parser_reset_error_status :: ( parser: *Parser ) {
 	parser.error_reported = false;
 }
 
-print_ast :: ( ast: *Ast_Node, header: string ) {
+parser_print_ast :: ( ast: *Ast_Node, header: string ) {
 
 	print( "%\n", header );
 	print_ast_helper :: ( node: *Ast_Node, indent: int = 0 ) {
@@ -308,6 +308,9 @@ parse_statement :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( node: *
 			return null;
 		}
 
+		// ERROR REPORTING, don't handle the case of returning a null expression!!!!
+		// jesus christ i am tired, time for some fooze-ball!!!
+
 		consume_token( parser ); // identifier
 		consume_token( parser ); // assignment
 
@@ -322,9 +325,17 @@ parse_statement :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( node: *
 	}
 
 	t0 = peek_token( parser );
-	if !parser.error_reported && t0.type != .Semicolon {
-		report_error( parser, "Syntax error, all statements must end with a semicolon\n" );
-		return null;
+	if !parser.error_reported {
+		// these are uncaught errors that need to be handled
+		if t0.type == .Minus || t0.type == .Left_Complement || t0.type == .Right_Complement {
+			report_error( parser, "Syntax error, no expression found to the right of the unary operator\n" );
+			return null;
+		}
+		else 
+		if t0.type != .Semicolon {
+			report_error( parser, "Syntax error, all statements must end with a semicolon\n" );
+			return null;
+		}
 	}
 	consume_token( parser );
 
@@ -339,10 +350,8 @@ parse_expression :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( node: 
 	while true {	
 			
 		t0 := peek_token( parser );
-		if t0.type == .Semicolon || t0.type == .End_Of_Input {
-			break;
-		}
-		
+		if t0.type == .Semicolon || t0.type == .End_Of_Input { break; }
+
 		if t0.type == .Plus || t0.type == .Minus {
 			op: Binary_Op;
 			if t0.type == {
@@ -353,6 +362,11 @@ parse_expression :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( node: 
 
 			next_term: *Ast_Node;
 			next_term = parse_exterior_term( parser, symbol_table );
+
+			if next_term == null {
+				report_error( parser, tprint( "Syntax error, unable to parse expression to the right of the binary operator %\n", op ) );
+				return null;
+			}
 
 			// Since sums and differences can't easily be resolved in Grassmann Algebra
 			// and often times lead to multi-vectors/multi-elements I just want to deal strictly with sums.
@@ -394,9 +408,7 @@ parse_exterior_term :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( nod
 	while true {
 		t0 := peek_token( parser );
 
-		if t0.type == .Semicolon || t0.type == .End_Of_Input {
-			break;
-		}
+		if t0.type == .Semicolon || t0.type == .End_Of_Input { break; }
 
 		if t0.type == .Exterior_Product || t0.type == .Regressive_Product {
 			consume_token( parser );
@@ -408,6 +420,11 @@ parse_exterior_term :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( nod
 
 			next_factor: *Ast_Node;
 			next_factor = parse_exterior_factor( parser, symbol_table );
+
+			if next_factor == null {
+				report_error( parser, tprint( "Syntax error, unable to parse expression to the right of binary operator %\n", op ) );
+				return null;
+			}
 
 			node := new_binary_operator_node( op, factor, next_factor );
 
@@ -424,11 +441,9 @@ parse_exterior_term :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( nod
 parse_exterior_factor :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( node: *Ast_Node ) {
 
 	node: *Ast_Node = null;
+	t0:   *Token;
 
-	t0: *Token;
-	t1: *Token;
-
-	// capture unary operators and apply after parsing the factor
+	// capture unary operators and apply after parsing the factor.
 	num_unary_operators: int = 0;
 	while true {
 		t0 = peek_token( parser );
@@ -452,16 +467,25 @@ parse_exterior_factor :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( n
 		}
 	}
 
-	// TODO: 3 >> returns the correct result, unable to parse expression
-	//       3 >>; says that all statements have to end in a semicolon
-	//       3 >> +; also says that all statements must end with a semicolon, too tired to think this through
-	// good job on working on it at all though, really want to draw to the screen and apply all this stuff
-	// though, we are getting there kev, one day at a time!!!
+	if num_unary_operators > 0   &&
+	   t0.type != .Basis_Element && 
+	   t0.type != .Identifier    && 
+	   t0.type != .Number        && 
+	   t0.type != .Open_Paren {
+		report_error( parser, "Syntax error, no expression following unary operator\n" );
+		return null;
+	}
 
-	t0 = peek_token( parser );
 	if t0.type == .Basis_Element {
 		consume_token( parser );
 		k_element := new_k_element_node( coefficient = 1, basis = t0.basis );
+
+/*
+		t0 = peek_token( parser );
+		if token isn't an operator		
+		return null
+*/
+		
 		node = k_element;
 	}
 	else
@@ -469,55 +493,82 @@ parse_exterior_factor :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( n
 		consume_token( parser );
 		value, success := lookup_symbol( t0.identifier, symbol_table );
 		if !success {
-			report_error( parser, "Syntax error, unresolved identifier.\n" );
+			report_error( parser, tprint( "Syntax error, unresolved identifier %\n", t0.identifier ) );
 			return null;
 		}
-		node = multielement_to_ast( value );
+		ident := multielement_to_ast( value );
+
+/*
+		t0 = peek_token( parser );
+		if token isn't an operator (unary operator, binary_operator)
+		return null
+*/
+
+		node = ident;
 	}
 	else
 	if t0.type == .Number {
 		consume_token( parser );
 		scalar := new_k_element_node( coefficient = t0.number, basis = 0 );
-		node = scalar;
 
-		t1 = peek_token( parser );
-		if t1.type == .Identifier {
+		t0 = peek_token( parser );
+		if t0.type == .Identifier {
 			consume_token( parser );
-			value, success := lookup_symbol( t1.identifier, symbol_table );
+			value, success := lookup_symbol( t0.identifier, symbol_table );
 			if !success {
-				report_error( parser, "Syntax error, unresolved identifier.\n" );
+				report_error( parser, tprint( "Syntax error, unresolved identifier %\n", t0.identifier ) );
 				return null;
 			}
-			binary_op := new_binary_operator_node( .Exterior_Product, scalar, multielement_to_ast( value ) );
 
-			node = binary_op;
+			exterior_product := new_binary_operator_node( .Exterior_Product, scalar, multielement_to_ast( value ) );
+			node = exterior_product;
 		}
 		else
-		if t1.type == .Basis_Element {
+		if t0.type == .Basis_Element {
 			consume_token( parser );
-			k_element := new_k_element_node( coefficient = 1, basis = t1.basis );
-			binary_op := new_binary_operator_node( .Exterior_Product, scalar, k_element );
+			k_element := new_k_element_node( coefficient = 1, basis = t0.basis );
+			exterior_product := new_binary_operator_node( .Exterior_Product, scalar, k_element );
 
-			node = binary_op;			
+			node = exterior_product;			
+		}
+		else
+		if t0.type == .Open_Paren {
+			consume_token( parser );
+			expression := parse_expression( parser, symbol_table );
+
+			t0 = peek_token( parser );
+			if t0.type != .Close_Paren {
+				report_error( parser, "Syntax error, msising closing parenthesis in expression\n" );
+				return null;
+			}
+			consume_token( parser );
+			
+			exterior_product := new_binary_operator_node( .Exterior_Product, scalar, expression );
+			node = exterior_product;
+		}
+		else {
+			node = scalar;
 		}
 	}
 	else
 	if t0.type == .Open_Paren {
 		consume_token( parser );
-		node = parse_expression( parser, symbol_table );
+
+		expression := parse_expression( parser, symbol_table );
+
 		t0 = peek_token( parser );
-		if t0.type  == .Close_Paren {
-			consume_token( parser );
-		}
-		else {
+		if t0.type  != .Close_Paren {
 			report_error( parser, "Syntax error, missing closing parenthesis in expression\n" );
 			return null;
 		}
+		consume_token( parser );
+
+		node = expression;
 	}
 	else {
-		report_error( parser, "Syntax error, unable to parse expression\n" );	
+		// errors reported in the calling procedures
 		return null;
-	}
+	} 
 
 	// iterate backwards over the set of unary operators
 	// creating a new parent that points to the later unary operator in lexicographical order

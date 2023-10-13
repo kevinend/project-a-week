@@ -500,6 +500,10 @@ generate_basis_symbol :: ( element: int, grade: int, n: int, one_element_symbols
 
 main :: () {
 
+	// i think the lexer needs to include the type of the thing
+	// he is tracking that this is a binary operator
+	// or he is just returning null, then handling that up above
+
 {
 	value: int = 10;
 	s := tprint( "Hello from outer space, my value is %\n", value );
