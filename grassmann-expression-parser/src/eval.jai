@@ -381,6 +381,11 @@ eval_complement :: ( type: Complement_Type, k_element: K_Element, n_element: s64
 
 anticommutative_coefficient :: ( lvalue: K_Element, rvalue: K_Element, dimension: int ) -> ( coefficient: int ) {
 
+	//           App    -- Call Gui with the type of thing you want on the screen and generally where in relation to one another
+	//           GUI    -- build list of vertices and positions to put on scree
+	// Layers -- Vulkan -- put pixels on the screen
+	// 		
+
 	// This procedure calculates the number of swaps required to reorder the elements into the 'canonical' ordering to build the N-element.
 	// If the number of swaps is odd then the product needs negated.
 
@@ -426,7 +431,7 @@ eval_grassmann_product :: ( op: Binary_Op, lvalue: K_Element, rvalue: K_Element,
 			result = eval_exterior_product( lvalue, rvalue, env.dimension );
 		}
 		case .Regressive_Product; {
-			result = eval_regressive_product( lvalue, rvalue, env.dimension );
+			result = eval_regressive_product( lvalue, rvalue, env.n_element );
 		}
 	}
 

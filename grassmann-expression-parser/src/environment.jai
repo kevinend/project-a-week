@@ -72,8 +72,8 @@ Environment :: struct {
 	MAX_DIMENSION :: 6;
 	MAX_NUM_BASIS_ELEMENTS :: #run power( 2, MAX_DIMENSION );
 
-	dimension: int;
-	n_element:           s64;
+	dimension: 			 int;
+	n_element:           Basis_Element_Index;
 	num_basis_elements:  int;
 
 	basis_index_to_multielement_index: [MAX_NUM_BASIS_ELEMENTS] Multi_Element_Index;
