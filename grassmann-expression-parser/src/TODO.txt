@@ -18,18 +18,25 @@ PARSER:
 --Handle keywords, kind of skipping over them for now
 xx--Revisit the use of t0,t1,t2; are they too simplistic? is the code hard to follow? (nope, pretty clean to me)
 --ERROR HANDLING NEEDS REVISITED and thought out a lot better than it is now, it is janky and not helpful with simple mistakes.
-  I think i may need to add information to the lexer about the CLASS/CATEGORY something is
-  if !error && !next_factor {
-  	add the code to say that you didn't find a 	
-  }
+// ; just crashes the program which is not ideal!
+// thinking about augmenting the tokens with a category, separator, type
+// so for things we have 
+//   IDENTIFIER
+//   KEYWORD
+//   BASIS_ELEMENT
+//   NUMBER
+//   but then for the one-element symbols like ^ + or << we have that wrapped in the type with no 'value' even though we could
+//   SEPARATOR
+//   BINARY_OPERATOR
+//   UNARY_OPERATOR
+//    then the value in symbol or something like that t0.category == SEPARATOR and t0.op_symbol == .Operator_Symbol
+//   you don't strictly need it but what does it buy you? that is the question, what is the specific problem i am having with
+//   error handling at the moment
 
-  too tired, got the 3 +; and 3 ^; errors to report correctly if you have 3 <<; we aren't reporting an error like 'missing expression'
-  after unary operator since after we get three back we check for wedge, antiwedge, then plus or minus, maybe at the top-level if it doesn't
-  equal a semicolon we just report an error and check if it is a unary operator
- 
 EVAL:
 --Interior product, use regressive with comp of second arg
---Left and Right additive identity (0 + e1) does not resolve correctly
+xx--Left and Right additive identity (0 + e1) does not resolve correctly (just worked, must have fixed in earlier change)
+xx--Fix the bug in the regressive product (wrong argument from the environment)
 
 ENVIRONMENT:
 --Should we clear all symbols on an environment change? Yes we have to

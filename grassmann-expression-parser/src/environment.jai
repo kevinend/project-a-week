@@ -83,8 +83,8 @@ Environment :: struct {
 
 	basis_elements: [] Basis_Element; // basis elements are stored in 'multielement' order
 
-	one_element_symbols: [] string; 
-	one_element_symbol_length: int;
+	basis_one_element_symbols: [] string; 
+	basis_one_element_symbol_length: int;
 }
 
 environment_update :: ( env: *Environment, dimension: int, one_element_symbols: [] string ) {
@@ -111,7 +111,7 @@ environment_update :: ( env: *Environment, dimension: int, one_element_symbols: 
 	// set the one element symbol length; in the current implementation all one element symbols MUST be the same length
 	// this is asserted if the user issues a command to change the current set of basis one elements
 	{
-		env.one_element_symbol_length = one_element_symbols[0].count;
+		env.basis_one_element_symbol_length = one_element_symbols[0].count;
 	}
 
 	// generate the basis elements from the space using the list of user-supplied one element symbols
@@ -155,7 +155,7 @@ environment_update :: ( env: *Environment, dimension: int, one_element_symbols: 
 			num_exterior_product_symbols := grade-1;
 
 			basis_elements_per_grade    := choose( env.dimension, grade );
-			basis_element_symbol_length := (grade * env.one_element_symbol_length) + num_exterior_product_symbols; 
+			basis_element_symbol_length := (grade * env.basis_one_element_symbol_length) + num_exterior_product_symbols; 
 
 			env.basis_symbols.size += (basis_elements_per_grade * basis_element_symbol_length);
 		}
@@ -177,18 +177,18 @@ environment_update :: ( env: *Environment, dimension: int, one_element_symbols: 
 	// update the environment's one-element symbols reference to point into the new one-element symbols in the basis symbol's buffer
 	// the one elements are tightly packed so the lexer can make the determination whether an identifier is a basis element (1-element) or not
 	{	
-		if env.one_element_symbols.data != null {
-			free( env.one_element_symbols.data );
-			env.one_element_symbols.data  = null;
-			env.one_element_symbols.count = 0; 
+		if env.basis_one_element_symbols.data != null {
+			free( env.basis_one_element_symbols.data );
+			env.basis_one_element_symbols.data  = null;
+			env.basis_one_element_symbols.count = 0; 
 		}
 
-		env.one_element_symbols.data  = alloc(  env.dimension * size_of(string) );
-		env.one_element_symbols.count = env.dimension;
-		assert( env.one_element_symbols.data != null );
+		env.basis_one_element_symbols.data  = alloc(  env.dimension * size_of(string) );
+		env.basis_one_element_symbols.count = env.dimension;
+		assert( env.basis_one_element_symbols.data != null );
 
 		for i: 0..env.dimension-1 {
-			env.one_element_symbols[i] = env.basis_elements[i+1].symbol; // +1 to skip over the grade 0 basis element
+			env.basis_one_element_symbols[i] = env.basis_elements[i+1].symbol; // +1 to skip over the grade 0 basis element
 		}
 	}
 

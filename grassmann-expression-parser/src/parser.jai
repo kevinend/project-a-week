@@ -11,32 +11,87 @@
 */
 
 Parser :: struct {
-
-	PARSER_TEMP_BUFFER_LENGTH :: 8;
-
+	
+	error_reported: bool = false; // maybe remove this and try the poisoning???
+	error_message:  string;
+	
 	tokens: 	  [] Token;
 	token_cursor: int;
+
+	PARSER_TEMP_BUFFER_LENGTH :: 8;
 
 	temp_buffer: [PARSER_TEMP_BUFFER_LENGTH] Unary_Op;
 
 	ast: *Ast_Node;
-
-	error_reported: bool = false;
-	error_message:  string;
 }
 
-parser_set_tokens :: ( parser: *Parser, tokens: [] Token, num_tokens: int ) {
-	
-	parser.tokens 		= tokens;
-	parser.tokens.count = num_tokens;
+// TODO: remove the symbol table, that would be handled in the semantic phase of the operation
+//       typecheck
+//       do a semantic check, report errors
+//       do the identifier lookup
+//       do the expansion
+//       do the evaluation
+// seems like a lot of steps
+// what if the tokens were prefix like LISP?
+//  (+ 3 4)
+//  but if you have something like e1^e2 + e3
+//  
+// + ^ e1 e2, that would be harder to do since we don't know how many tokens to look ahead
+// and you'd have to do that repeatedly
+// 
+// should return a parser WITH errors not a parser or errors, which is kind of what i am doing
+// Command_Set || Command_Get, parse the command
+// 
+// parse assignments
+// parse expressions
+// parse commands -- these are the top level things we could have in the tree
+// 
+// when you parse the expression you start with the terms in the expression (assuming simple sums)
+//  category.Expression (number, identifier, or basis element), maybe it isn't a good idea
+//  category.Literal    (literal)
+//  category.Operator   (
+//  category.Separator  (
+//  category.Command    ( 
+//  category.Error      ( all unrecognized symbols )
+//  category.Text
+//  category.Number
+// 
+// then you are an error and you poison this. Syntax error, unable to parse expression to the right of blah,
+// expected number, identifier or basis element and found token '$whatever'
+// feel like that would be relatively trivial pass over the expression and still be relatively quick
+//
+// so lets take that case
+// e1 +; // missing an argument
+// parse expression
+//  parse +
+//   grab the next token, if it's category is not an expression, then we return the error token
+// or we could just put the error in there for now, i feel like that is
+// we could say if you are a Unary_Operator or Expression
+// Binary_Operator
+// Unary_Operator
+// category.Expression or a Unary_Operator, expected a unary operator or an expression
+// 
+//  Categories:
+//    Expression
+//    Unary_Operator
+//    Binary_Operator
+//    Separator
+//    Command
+//    Error
+//
+// but i kind of feel that it is
+// parse_assignment
+// parse_get_command
+// parse_set_command
+// parse_exit_command
+// i feel like these all need different procedures
+// parse_expression
+//
 
-	parser.token_cursor = 0;
-	parser.ast          = null;
 
-	return;
-}
+generate_ast :: ( parser: *Parser, tokens: [] Token, num_tokens: int, symbol_table: *Symbol_Table ) {
 
-parser_generate_ast :: ( parser: *Parser, symbol_table: *Symbol_Table ) {
+	reset_parser( parser, tokens, num_tokens );
 
 	root: *Ast_Node = null;
 	t0: Token;	
@@ -49,17 +104,10 @@ parser_generate_ast :: ( parser: *Parser, symbol_table: *Symbol_Table ) {
 	}
 
 	parser.ast = root;
+
 }
 
-parser_reported_error :: ( parser: *Parser ) -> ( yes_no: bool ) {
-	return parser.error_reported;
-}
-
-parser_reset_error_status :: ( parser: *Parser ) {
-	parser.error_reported = false;
-}
-
-parser_print_ast :: ( ast: *Ast_Node, header: string ) {
+print_ast :: ( parser: *Parser, header: string ) {
 
 	print( "%\n", header );
 	print_ast_helper :: ( node: *Ast_Node, indent: int = 0 ) {
@@ -116,11 +164,24 @@ parser_print_ast :: ( ast: *Ast_Node, header: string ) {
 		}
 	}
 
-	print_ast_helper( ast );
+	print_ast_helper( parser.ast );
 	print( "\n" );
 }
 
 #scope_file
+
+reset_parser :: ( parser: *Parser, tokens: [] Token, num_tokens: int ) {
+
+	parser.tokens 		= tokens;
+	parser.tokens.count = num_tokens;
+
+	parser.token_cursor = 0;
+	parser.ast          = null;
+
+	parser.error_reported = false;
+
+	return;
+}
 
 peek_token :: inline ( parser: *Parser, offset: int = 0 ) -> ( token: *Token ) {
 	return *parser.tokens[parser.token_cursor + offset];
@@ -132,7 +193,7 @@ consume_token :: inline ( parser: *Parser ) {
 
 report_error :: ( parser: *Parser, message: string ) {
 
-	// Parser errors are syntax errors where the logical combination of tokens is not what our application expects.
+	// Parser errors:
 	// Error messages are written to temporary storage, will be wiped on each iteration of the program.
 	token := parser.tokens[parser.token_cursor];
 	default_message := tprint( "Parser error occurred on line number %, character %\n", token.line_number, token.character_index );
@@ -307,9 +368,6 @@ parse_statement :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( node: *
 			report_error( parser, "Syntax error, only identifiers can be specified on the left of an assignment operator\n" );
 			return null;
 		}
-
-		// ERROR REPORTING, don't handle the case of returning a null expression!!!!
-		// jesus christ i am tired, time for some fooze-ball!!!
 
 		consume_token( parser ); // identifier
 		consume_token( parser ); // assignment

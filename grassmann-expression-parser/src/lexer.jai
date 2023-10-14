@@ -2,6 +2,10 @@
 
 Lexer :: struct {
 
+	// error fields are publicly accessible from outside this file
+	error_reported: bool = false;
+	error_message:  string; 
+
 	MAX_NUM_TOKENS_PER_EXPRESSION :: 100;  // an expression is a single line of input
 	TEMP_BUFFER_LENGTH      	  ::  64; // dictates the size of identifiers and the number of digits in a number
 
@@ -12,46 +16,30 @@ Lexer :: struct {
 	token_starting_line_number:     Line_Number;
 	token_starting_character_index: Character_Index;
 
+	// references to external data: input and basis symbols
 	input: string;
 	input_cursor: int;
+
+	basis_one_element_symbols: [] string;
 
 	tokens: [MAX_NUM_TOKENS_PER_EXPRESSION] Token;
 	num_tokens: int = 0;
 
 	temp_buffer: [TEMP_BUFFER_LENGTH] u8;
-
-	error_reported: bool = false;
-	error_message:  string; 
 }
 
+generate_tokens :: ( lexer: *Lexer, user_input: string, basis_one_element_symbols: [] string ) {
 
-lexer_set_input_from_string :: ( lexer: *Lexer, user_input: string ) {
+	reset_lexer( lexer, user_input, basis_one_element_symbols );
 
-	lexer.current_character_index = 0;
-
-	lexer.input = user_input;
-	lexer.input_cursor = 0;
-
-	return;
-}
-
-lexer_clear_prior_tokens :: ( lexer: *Lexer ) {
-
-	// Prior line's tokens get overwritten on every new input line.
-	lexer.num_tokens = 0;
-}
-
-lexer_generate_tokens :: ( lexer: *Lexer, one_element_symbols: [] string ) {
-	
+	// generate tokens based on the current user input.
 	c0: u8;
 	success: bool;
 	token: Token;
 	
 	while true {
 
-		if lexer_reported_error( lexer ) {
-			break;
-		}
+		if lexer.error_reported { break; }
 	 	
 	 	success, c0 = peek_next_character( lexer );
 		while success && is_space( c0 ) { // is_space is from JAI library; Basic???
@@ -68,13 +56,13 @@ lexer_generate_tokens :: ( lexer: *Lexer, one_element_symbols: [] string ) {
 		}
 
 		if begins_literal( c0 ) {
-			token = compose_literal( lexer );
+			token = compose_literal_token( lexer );
 			add_token( lexer, token );
 			continue;
 		}
 
 		if begins_identifier( c0 ) {
-			token = compose_identifier_keyword_or_basis_symbol_token( lexer, one_element_symbols );
+			token = compose_identifier_keyword_or_basis_symbol_token( lexer, basis_one_element_symbols );
 			add_token( lexer, token );
 			continue;	
 		}
@@ -92,23 +80,12 @@ lexer_generate_tokens :: ( lexer: *Lexer, one_element_symbols: [] string ) {
 	return;	
 }
 
-lexer_reported_error :: ( lexer: *Lexer ) -> bool {
-	return lexer.error_reported;
+no_tokens :: ( lexer: *Lexer ) -> ( bool ) {
+	// empty input gets the .End_Of_input token
+	return lexer.num_tokens <= 1; 
 }
 
-lexer_print_error_message :: ( lexer: *Lexer ) {
-	print( lexer.error_message );
-}
-
-lexer_reset_error_status :: ( lexer: *Lexer ) {
-	lexer.error_reported = false;
-}
-
-lexer_contains_no_tokens :: ( lexer: *Lexer ) -> ( yes_no: bool ) {
-	return lexer.tokens[0].type == .End_Of_Input;
-}
-
-lexer_print_tokens :: ( lexer: *Lexer, header: string ) {
+print_tokens :: ( lexer: *Lexer, header: string ) {
 	
 	print( "%\n", header );
 
@@ -154,6 +131,24 @@ lexer_print_tokens :: ( lexer: *Lexer, header: string ) {
 
 #scope_file
 
+reset_lexer :: ( lexer: *Lexer, user_input: string, basis_one_element_symbols: [] string ) {
+
+	// initialize lexer with the input from the user.
+	lexer.input        = user_input;
+	lexer.input_cursor = 0;
+
+	lexer.current_character_index = 0;
+
+	// capture the current working set of basis one element symbols to use for discerning these symbols from identifiers
+	lexer.basis_one_element_symbols = basis_one_element_symbols;
+
+	// clear the tokens from the prior input stream.
+	lexer.num_tokens = 0;
+
+	// reset error reported flag
+	lexer.error_reported = false;
+}
+	
 report_error :: ( lexer: *Lexer, message: string ) {
 
 	// Lexer errors are for unrecognized character sequences that we can't turn into tokens.
@@ -186,17 +181,17 @@ update_token_character_indices_and_line_number :: inline ( lexer: *Lexer, token:
 	token.character_index.end   = lexer.current_character_index-1;
 }
 
-is_remaining_input :: inline ( lexer: *Lexer ) -> ( remaining_characters: int ) {
-	return lexer.input.count - lexer.input_cursor;
+is_remaining_input :: inline ( lexer: *Lexer ) -> ( bool ) {
+	return (lexer.input.count - lexer.input_cursor) > 0;
 }
 
 peek_next_character :: inline ( lexer: *Lexer ) -> (success: bool, c: u8) {
 	
-	if !is_remaining_input( lexer ) { 
-		return false, 0;	
+	if is_remaining_input( lexer ) { 
+		return true, lexer.input[lexer.input_cursor];
 	}
 	else {
-		return true, lexer.input[lexer.input_cursor];
+		return false, 0;
 	}
 }
 
@@ -222,7 +217,7 @@ error_token :: () -> ( token: Token ) {
 	return token;
 }
 
-compose_literal :: ( lexer: *Lexer ) -> ( token: Token ) {
+compose_literal_token :: ( lexer: *Lexer ) -> ( token: Token ) {
 
 	continues_literal :: ( c: u8 ) -> ( yes_no: bool ) {
 		return c != #char "'";

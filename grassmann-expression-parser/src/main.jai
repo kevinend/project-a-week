@@ -24,7 +24,11 @@ main :: () {
 	parser: Parser;
 	interp: Interpreter;
 
-	environment_update( *env, dimension = 4, one_element_symbols = string.["e1","e2","e3","e4"] );
+	environment_update( 
+		 *env
+		,dimension = 4
+		,one_element_symbols = string.["e1","e2","e3","e4"]
+	);
 
 	user_input: string;
 	while !quit {
@@ -34,41 +38,100 @@ main :: () {
 		print( "%", PROMPT );
 	
 		user_input = read_line();
-
-		lexer_set_input_from_string( *lexer, user_input );
-		lexer_clear_prior_tokens( *lexer );
-		lexer_generate_tokens( *lexer, env.one_element_symbols );
-
-		if lexer_reported_error( *lexer ) {
-			lexer_print_error_message( *lexer ); 
-			lexer_reset_error_status(  *lexer );
+		generate_tokens( *lexer, user_input, env.basis_one_element_symbols );
+		
+		if lexer.error_reported {
+			print( lexer.error_message );
 			continue;
 		}
 		else
-		if lexer_contains_no_tokens( *lexer ) { 
-		    print( "No input; Enter a valid Grassmann expression or 'exit;' to quit\n" );
-			continue; 
+		if no_tokens( *lexer ) {
+			print( "No input; Enter a valid Grassmann expression or 'exit;' to quit\n" );
+			continue;
 		}
+		
+		print_tokens( *lexer, "Tokens:" );
 
-		lexer_print_tokens( *lexer, "Tokens:" );
-
-		parser_set_tokens( *parser, lexer.tokens, lexer.num_tokens );
-		parser_generate_ast( *parser, *interp.symbol_table );
-
-		if parser_reported_error( *parser ) {
+		generate_ast( *parser, lexer.tokens, lexer.num_tokens, *interp.symbol_table ); // this should handle expansion automatically
+		if parser.error_reported {
 			print( parser.error_message );
-			parser_reset_error_status( *parser );
 			continue;
 		}
 
-		parser_print_ast( parser.ast, "Ast:" );
+		print_ast( *parser, "Ast:" );
+
+
+		/*
+			two ideas from this PDF that stuck out are the parsing of the WHILE Statement
+				case Token_While: {
+					nextToken();
+					check(toklParen);
+					Expression condition = parseExpression();
+					check(Tokrparen);
+					statement body = parseStatement( PSScope, null, &endloc );
+					s = new WhileStatement( loc, condition, body, endloc );
+					break
+				}
+
+				lookahead is a stack of tokens, if we want to lookahead we just stack them up
+
+				Commands
+				Expressions
+
+				assignments are binary operators but you can only have one of them...
+				Assignments parse_expression
+				Expressions
+				assignment
+				expression
+				
+				
+				next+1
+				next
+				current
+
+				so that is a cool idea, then you pop them off when you need them to do the thing
+
+				Special ERROR- AST NODE
+				replace errorneous AST node with an 'error node'
+				replace any node that has an error child with an error node
+					removes the cascading errors
+
+
+				like that looks super simple to me, check
+			but right now we have a problem with errors
+				if t0.category == .Command {
+					root = parser_command( parser );
+				}
+				else {
+					root = parse_statement( parser, symbol_table );
+
+					if !Basis_Element || !Ident || !Number {
+						report_error( "Syntax error, unexpected token "
+					}
+					else
+					if t1.Assign and !Ident then we have a problem
+					// you have all these potential problems, how do people solve this??
+				}
+
+						eval( parser.ast );
+				// if this is a command, then we check and do the command
+				// if it is an assignment we do the assign
+				// otherwise we eval
+
+			print_symbol_table (this could be an option or it could always just be displayed )
+
+		*/
+
+	//	parser_set_tokens( *parser, lexer.tokens, lexer.num_tokens );
+	//	parser_generate_ast( *parser, *interp.symbol_table );
+
 
 		if parser.ast.kind == .Command {
 			evaluate_command( parser.ast, *env );
 		}
 		else {
 			parser.ast = expand( parser.ast );
-			parser_print_ast( parser.ast, "Post-Expand Ast:" );
+			print_ast( *parser, "Post-Expand Ast:" );
 			evaluate( parser.ast, *env, *interp );
 			print_symbol_table( *interp.symbol_table, env.basis_elements );
 		}

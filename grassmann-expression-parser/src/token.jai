@@ -8,6 +8,23 @@ Range :: struct(T: Type) {
 	end:   T;
 }
 
+
+// some of these are catgories and others are not
+// we are mixing and matching and i want to err on the side of more not less, since it would make it more readable
+//  Type
+//   
+//	 Identifier
+//   Basis_Element
+//   Literal
+//   Number
+//   Error
+//   End_Of_Input
+//   Separator
+//   Unary_Operator, minus is always applied as a unary operator, if we find it higher up then .operator, .separator
+//   Binary_Operator
+
+//   token.separator == .Right_Paren
+
 Token_Type :: enum u8 {
 
 	Undefined;

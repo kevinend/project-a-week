@@ -94,11 +94,11 @@ evaluate_command :: ( node: *Ast_Node, env: *Environment ) {
 			case .Basis; {
 				print( "One element symbols = [" );
 				i: int = 0;
-				while i < env.one_element_symbols.count-1 {
-					print( "%,", env.one_element_symbols[i] );
+				while i < env.basis_one_element_symbols.count-1 {
+					print( "%,", env.basis_one_element_symbols[i] );
 					i += 1;
 				}
-				print( "%]\n", env.one_element_symbols[i] );
+				print( "%]\n", env.basis_one_element_symbols[i] );
 			}
 		}
 	}
