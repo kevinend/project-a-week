@@ -8,23 +8,6 @@ Range :: struct(T: Type) {
 	end:   T;
 }
 
-
-// some of these are catgories and others are not
-// we are mixing and matching and i want to err on the side of more not less, since it would make it more readable
-//  Type
-//   
-//	 Identifier
-//   Basis_Element
-//   Literal
-//   Number
-//   Error
-//   End_Of_Input
-//   Separator
-//   Unary_Operator, minus is always applied as a unary operator, if we find it higher up then .operator, .separator
-//   Binary_Operator
-
-//   token.separator == .Right_Paren
-
 Token_Type :: enum u8 {
 
 	Undefined;
@@ -40,16 +23,16 @@ Token_Type :: enum u8 {
 	// Those that are 'commands' and those that are 'configs'.
 	// Set sentinel values for start and end for each category to ease parsing.
 	
-	Command_Start;	
+	Command_Start;			// TODO: REMOVE
 	Keyword_Get;
 	Keyword_Set;
 	Keyword_Exit;
-	Command_End;
+	Command_End;			// TODO: REMOVE
 
-	Config_Start;
+	Config_Start;			// TODO: REMOVE
 	Keyword_Dimension;
 	Keyword_Basis;
-	Config_End;
+	Config_End;				// TODO: REMOVE
 
 	// separators
 	Semicolon;
@@ -72,7 +55,7 @@ Token_Type :: enum u8 {
 
 Token :: struct {
 	
-	type: Token_Type = .Error;
+	type: Token_Type = .Undefined;
 
 	line_number: 	 Line_Number;
 	character_index: Range(Character_Index);

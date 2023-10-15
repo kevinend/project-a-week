@@ -25,82 +25,93 @@ Parser :: struct {
 	ast: *Ast_Node;
 }
 
-// TODO: remove the symbol table, that would be handled in the semantic phase of the operation
-//       typecheck
-//       do a semantic check, report errors
-//       do the identifier lookup
-//       do the expansion
-//       do the evaluation
-// seems like a lot of steps
-// what if the tokens were prefix like LISP?
-//  (+ 3 4)
-//  but if you have something like e1^e2 + e3
-//  
-// + ^ e1 e2, that would be harder to do since we don't know how many tokens to look ahead
-// and you'd have to do that repeatedly
-// 
-// should return a parser WITH errors not a parser or errors, which is kind of what i am doing
-// Command_Set || Command_Get, parse the command
-// 
-// parse assignments
-// parse expressions
-// parse commands -- these are the top level things we could have in the tree
-// 
-// when you parse the expression you start with the terms in the expression (assuming simple sums)
-//  category.Expression (number, identifier, or basis element), maybe it isn't a good idea
-//  category.Literal    (literal)
-//  category.Operator   (
-//  category.Separator  (
-//  category.Command    ( 
-//  category.Error      ( all unrecognized symbols )
-//  category.Text
-//  category.Number
-// 
-// then you are an error and you poison this. Syntax error, unable to parse expression to the right of blah,
-// expected number, identifier or basis element and found token '$whatever'
-// feel like that would be relatively trivial pass over the expression and still be relatively quick
-//
-// so lets take that case
-// e1 +; // missing an argument
-// parse expression
-//  parse +
-//   grab the next token, if it's category is not an expression, then we return the error token
-// or we could just put the error in there for now, i feel like that is
-// we could say if you are a Unary_Operator or Expression
-// Binary_Operator
-// Unary_Operator
-// category.Expression or a Unary_Operator, expected a unary operator or an expression
-// 
-//  Categories:
-//    Expression
-//    Unary_Operator
-//    Binary_Operator
-//    Separator
-//    Command
-//    Error
-//
-// but i kind of feel that it is
-// parse_assignment
-// parse_get_command
-// parse_set_command
-// parse_exit_command
-// i feel like these all need different procedures
-// parse_expression
-//
+// could push this back into the lexer/token generation as an additional field on the token
+is_expression_token :: inline ( type: Token_Type ) -> bool {
 
+	return type == .Identifier || type == .Basis_Element || type == .Number || type == .Open_Paren;
+}
+
+is_binary_operator_token :: inline ( type: Token_Type ) -> bool {
+	
+	return type == .Plus || type == .Assign || type == .Exterior_Product || type == .Regressive_Product || type == .Interior_Product;
+}
+
+is_unary_operator_token :: inline ( type: Token_Type ) -> bool {
+	
+	return type == .Minus || type == . Left_Complement || type == .Right_Complement;
+}
+
+is_operator_token :: inline ( type: Token_Type ) -> bool {
+
+	return is_binary_operator_token( type ) || is_unary_operator_token( type );
+}
+
+// so you have to try things to figure out what works and what doesn't
+// i think that this architecture is BETTER but not perfect, i really was just guessing around and you see the limitations of that with some of the errors
+// really we want things like L1 = 3 = to report that we expected either a semicolon or another subexpression or something.
+// i'm not sure the poisioning would report the correct stuff either but maybe i am missing something
+
+// the problem is kind of the pushing down of the stack so you have to pop up and tell us what happened
+// the children notion that he spoke about in the talk is relevant. I would say i made progress tonight but not like leaps and bounds
+// once i have this error stuff a bit more sorted i think things will become clearer
+
+
+
+parse_get_command :: ( parser: *Parser ) -> ( ast: *Ast_Node ) {
+	return null;
+}
+
+parse_set_command :: ( parser: *Parser ) -> ( ast: *Ast_Node ) {
+	return null;
+}
+
+parse_exit_command :: ( parser: *Parser ) -> ( ast: *Ast_Node ) {
+	return null;
+}
+
+parse_assignment :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( ast: *Ast_Node ) {
+
+	// The order of the tokens is flipped in the lexer so an assignment
+	// statement has it's tokens ordered as ".Assign .Ident .Expression"
+	// provided the original text for the assignment is valid.
+
+	consume_token( parser );
+	
+	assignment: *Ast_Node = null;
+
+	t0: Token;
+	t0 = peek_token( parser );
+	if  t0.type == .Identifier {
+		consume_token( parser );
+	  	ident 	   := new_identifier_node( t0.identifier );
+		expression := parse_expression( parser, symbol_table );
+			
+		assignment = new_binary_operator_node( .Assign, ident, expression ); 
+	}
+	else {
+		report_error( parser, "Expected an identifier following an assignment statement\n" );
+		return null;
+	}
+
+	return assignment;
+}
 
 generate_ast :: ( parser: *Parser, tokens: [] Token, num_tokens: int, symbol_table: *Symbol_Table ) {
 
-	reset_parser( parser, tokens, num_tokens );
+	reset_parser( parser, tokens, num_tokens ); // TODO: add a reference to the symbol table, it is the one used by the parser
 
 	root: *Ast_Node = null;
-	t0: Token;	
+	t0: Token;
+
 	t0 = peek_token( parser );
-	if t0.type > .Command_Start && t0.type < .Command_End {
-		root = parse_command( parser );
-	}
-	else {
-		root = parse_statement( parser, symbol_table ); 
+
+	// TODO: make this a reality!
+	if t0.type == {
+		case .Keyword_Get;  { root = parse_get_command( parser );  }
+		case .Keyword_Set;  { root = parse_set_command( parser );  }
+		case .Keyword_Exit; { root = parse_exit_command( parser ); }
+		case .Assign;       { root = parse_assignment( parser, symbol_table );   }
+		case;               { root = parse_expression( parser, symbol_table );   }
 	}
 
 	parser.ast = root;
@@ -344,71 +355,15 @@ parse_command :: ( parser: *Parser ) -> ( node: *Ast_Node ) {
 	return node;	
 }
 
-parse_statement :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( node: *Ast_Node ) {
-
-	// Valid Statements:
-	//  <statement> ::= <ident> '=' <expression> ';'
-	//  <statement> ::= <expression>;
-	//
-	// To determine if the statement is an assignment we need to read two tokens.
-	// Hacky but if there is only a single token in the expression we append the END_OF_INPUT
-	// token onto the end so there will always be two tokens in the buffer.
-	// If the input is empty the main loop just continues to the next iteration as well.
-
-	t0: *Token;
-	t1: *Token;
-
-	statement: *Ast_Node = null;
-
-	t0 = peek_token( parser );
-	t1 = peek_token( parser, offset = 1 );
-
-	if t1.type == .Assign {
-		if t0.type != .Identifier {
-			report_error( parser, "Syntax error, only identifiers can be specified on the left of an assignment operator\n" );
-			return null;
-		}
-
-		consume_token( parser ); // identifier
-		consume_token( parser ); // assignment
-
-		ident := new_identifier_node( t0.identifier );
-		expr  := parse_expression( parser, symbol_table );
-
-		assignment := new_binary_operator_node( .Assign, ident, expr );
-		statement = assignment;
-	}
-	else {
-		statement = parse_expression( parser, symbol_table );	
-	}
-
-	t0 = peek_token( parser );
-	if !parser.error_reported {
-		// these are uncaught errors that need to be handled
-		if t0.type == .Minus || t0.type == .Left_Complement || t0.type == .Right_Complement {
-			report_error( parser, "Syntax error, no expression found to the right of the unary operator\n" );
-			return null;
-		}
-		else 
-		if t0.type != .Semicolon {
-			report_error( parser, "Syntax error, all statements must end with a semicolon\n" );
-			return null;
-		}
-	}
-	consume_token( parser );
-
-	return statement;
-}
-
 parse_expression :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( node: *Ast_Node ) {
 
 	term: *Ast_Node = null;
-	term = parse_exterior_term( parser, symbol_table );
-	
+	term = parse_exterior_term( parser, symbol_table ); 
+
 	while true {	
 			
 		t0 := peek_token( parser );
-		if t0.type == .Semicolon || t0.type == .End_Of_Input { break; }
+		if t0.type == .Semicolon || t0.type == .End_Of_Input { break; } // not sure i need these, maybe a != here for the arithmetic operators
 
 		if t0.type == .Plus || t0.type == .Minus {
 			op: Binary_Op;
@@ -420,11 +375,6 @@ parse_expression :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( node: 
 
 			next_term: *Ast_Node;
 			next_term = parse_exterior_term( parser, symbol_table );
-
-			if next_term == null {
-				report_error( parser, tprint( "Syntax error, unable to parse expression to the right of the binary operator %\n", op ) );
-				return null;
-			}
 
 			// Since sums and differences can't easily be resolved in Grassmann Algebra
 			// and often times lead to multi-vectors/multi-elements I just want to deal strictly with sums.
@@ -479,10 +429,6 @@ parse_exterior_term :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( nod
 			next_factor: *Ast_Node;
 			next_factor = parse_exterior_factor( parser, symbol_table );
 
-			if next_factor == null {
-				report_error( parser, tprint( "Syntax error, unable to parse expression to the right of binary operator %\n", op ) );
-				return null;
-			}
 
 			node := new_binary_operator_node( op, factor, next_factor );
 
@@ -500,6 +446,12 @@ parse_exterior_factor :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( n
 
 	node: *Ast_Node = null;
 	t0:   *Token;
+
+	t0 = peek_token( parser );
+	if !is_expression_token( t0.type ) && !is_unary_operator_token( t0.type ) {
+		error := new_error_node( "Expected either a unary operator or expression [number, basis element, identifier or parenthesized expression." );
+		return error;
+	}
 
 	// capture unary operators and apply after parsing the factor.
 	num_unary_operators: int = 0;
@@ -525,12 +477,13 @@ parse_exterior_factor :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( n
 		}
 	}
 
-	if num_unary_operators > 0   &&
-	   t0.type != .Basis_Element && 
-	   t0.type != .Identifier    && 
-	   t0.type != .Number        && 
-	   t0.type != .Open_Paren {
-		report_error( parser, "Syntax error, no expression following unary operator\n" );
+	if num_unary_operators > 0 && !is_expression_token( t0.type ) {
+		error := new_error_node( tprint( "Expected an expression following unary operator %\n", parser.temp_buffer[num_unary_operators-1] ));
+		return error;
+	}
+	else
+	if !is_expression_token( t0.type ) {
+		report_error( parser, "Syntax error, expected expression (either number, basis element, identifier or start of a new sub-expression (\n" );
 		return null;
 	}
 
@@ -538,31 +491,21 @@ parse_exterior_factor :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( n
 		consume_token( parser );
 		k_element := new_k_element_node( coefficient = 1, basis = t0.basis );
 
-/*
-		t0 = peek_token( parser );
-		if token isn't an operator		
-		return null
-*/
-		
 		node = k_element;
 	}
 	else
 	if t0.type == .Identifier {
 		consume_token( parser );
 		value, success := lookup_symbol( t0.identifier, symbol_table );
+		
 		if !success {
-			report_error( parser, tprint( "Syntax error, unresolved identifier %\n", t0.identifier ) );
-			return null;
+			error := new_error_node( tprint( "Unresolved identifier %\n", t0.identifier ) );
+			node = error;
 		}
-		ident := multielement_to_ast( value );
-
-/*
-		t0 = peek_token( parser );
-		if token isn't an operator (unary operator, binary_operator)
-		return null
-*/
-
-		node = ident;
+		else {
+			ident := multielement_to_ast( value );
+			node = ident;
+		}
 	}
 	else
 	if t0.type == .Number {
@@ -574,12 +517,13 @@ parse_exterior_factor :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( n
 			consume_token( parser );
 			value, success := lookup_symbol( t0.identifier, symbol_table );
 			if !success {
-				report_error( parser, tprint( "Syntax error, unresolved identifier %\n", t0.identifier ) );
-				return null;
+				error := new_error_node( tprint( "Unresolved identifier %\n", t0.identifier ) );
+				node = error;
 			}
-
-			exterior_product := new_binary_operator_node( .Exterior_Product, scalar, multielement_to_ast( value ) );
-			node = exterior_product;
+			else {
+				exterior_product := new_binary_operator_node( .Exterior_Product, scalar, multielement_to_ast( value ) );
+				node = exterior_product;
+			}
 		}
 		else
 		if t0.type == .Basis_Element {
@@ -596,13 +540,14 @@ parse_exterior_factor :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( n
 
 			t0 = peek_token( parser );
 			if t0.type != .Close_Paren {
-				report_error( parser, "Syntax error, msising closing parenthesis in expression\n" );
-				return null;
+				error := new_error_node( "Missing closing parenthesis in expression\n" );
+				node = error;
 			}
-			consume_token( parser );
-			
-			exterior_product := new_binary_operator_node( .Exterior_Product, scalar, expression );
-			node = exterior_product;
+			else {
+				consume_token( parser );
+				exterior_product := new_binary_operator_node( .Exterior_Product, scalar, expression );
+				node = exterior_product;
+			}
 		}
 		else {
 			node = scalar;
@@ -616,17 +561,14 @@ parse_exterior_factor :: ( parser: *Parser, symbol_table: *Symbol_Table ) -> ( n
 
 		t0 = peek_token( parser );
 		if t0.type  != .Close_Paren {
-			report_error( parser, "Syntax error, missing closing parenthesis in expression\n" );
-			return null;
+			error := new_error_node( "Missing closing parenthesis in expression\n" );
+			node = error;
 		}
-		consume_token( parser );
-
-		node = expression;
+		else {
+			consume_token( parser );
+			node = expression;
+		}
 	}
-	else {
-		// errors reported in the calling procedures
-		return null;
-	} 
 
 	// iterate backwards over the set of unary operators
 	// creating a new parent that points to the later unary operator in lexicographical order

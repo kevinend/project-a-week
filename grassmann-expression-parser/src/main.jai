@@ -53,13 +53,9 @@ main :: () {
 		print_tokens( *lexer, "Tokens:" );
 
 		generate_ast( *parser, lexer.tokens, lexer.num_tokens, *interp.symbol_table ); // this should handle expansion automatically
-		if parser.error_reported {
-			print( parser.error_message );
+		if syntax_errors( parser.ast ) {
 			continue;
 		}
-
-		print_ast( *parser, "Ast:" );
-
 
 		/*
 			two ideas from this PDF that stuck out are the parsing of the WHILE Statement
@@ -148,6 +144,7 @@ main :: () {
 #load "token.jai";
 #load "lexer.jai";
 #load "parser.jai";
+#load "error-pass.jai";
 #load "ast.jai";
 #load "expand.jai";
 #load "eval.jai";

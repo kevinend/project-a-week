@@ -75,6 +75,9 @@ generate_tokens :: ( lexer: *Lexer, user_input: string, basis_one_element_symbol
 
 		token = compose_separator_or_operator_token( c0, lexer );
 		add_token( lexer, token );
+		if token.type == .Assign {
+			swap_tokens( lexer );	
+		}
 	}
 
 	return;	
@@ -564,4 +567,20 @@ add_token :: ( lexer: *Lexer, token: Token ) {
 	lexer.num_tokens += 1;
 
 	return;	
+}
+
+swap_tokens :: ( lexer: *Lexer ) {
+
+	// This is exclusively to handle assignment statements.
+	// The order of 'Identifier' followed by 'Assignment' is annoying in the parser so I just swap the tokens in the lexer.
+
+	c: int = lexer.num_tokens-2; 
+	p: int = lexer.num_tokens-1;
+
+	previous: Token = lexer.tokens[p];
+	current:  Token = lexer.tokens[c];
+	
+	temp: Token = previous;
+	lexer.tokens[p] = current;
+	lexer.tokens[c] = temp;
 }

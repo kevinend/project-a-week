@@ -1,7 +1,8 @@
 #scope_export
 
 Node_Kind :: enum {
-	
+
+	Error;
 	K_Element; // support for 'origin' as basis, so no longer just k-vectors
 	Identifier;
 	Literal;
@@ -12,6 +13,12 @@ Node_Kind :: enum {
 
 Ast_Node :: struct {
 	kind: Node_Kind;
+}
+
+Error_Node :: struct {
+	#as using _kind: Ast_Node;
+	
+	message: string;
 }
 
 K_Element_Node :: struct {
@@ -123,6 +130,17 @@ clone_node :: ( node: *Ast_Node ) -> ( cloned_node: *Ast_Node ) {
 	}
 	
 	return cloned_node;	
+}
+
+new_error_node :: ( message: string ) -> ( node: *Error_Node ) {
+
+	node: *Error_Node = talloc( size_of(Error_Node) );
+	assert( node != null );
+
+	node.kind    = Node_Kind.Error;
+	node.message = message;
+
+	return node;
 }
 
 new_k_element_node :: ( coefficient: int, basis: s64 ) -> ( node: *K_Element_Node ) {
